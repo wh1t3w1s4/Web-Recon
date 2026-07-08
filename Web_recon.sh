@@ -6,6 +6,7 @@ CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+yellow='\033[0;33m'
 
 BIG='\033[1;32m'
 
@@ -89,10 +90,12 @@ echo -e "\n"
 
 echo -e "${YELLOW}[+] Iniciando reconocimiento activo para: $target${NC}"
         echo -e "\n"
-
+	echo -e "\n"
 
 # Devuelve "https", "http" o "ninguno" según lo que responda el target
 
+
+#------------------------------------------------------------------------------------------------------------
 detectar_protocolo() {
     local domain="$1"
     domain="${domain//[$'\t\r\n ']/}"
@@ -123,17 +126,20 @@ detectar_protocolo() {
     echo "ninguno"
     return 1
 }
+#-------------------------------------------------------------------------------------------------------------
 
-# ---------------------------------------------------------
-# Llamada a la función y comprobación (fase de pruebas)
-# ---------------------------------------------------------
+
+#protocol
 echo -e "${GREEN}[+] Detectando protocolo (HTTP/HTTPS)${NC}"
-protocol=$(detectar_protocolo "$target")
-echo "[DEBUG] Valor de \$protocol -> [$protocol]"
 
+protocol=$(detectar_protocolo "$target")
+	echo -e "\n"
+
+#error
 if [[ "$protocol" == "ninguno" ]]; then
     echo -e "${YELLOW}[-] $target no responde por HTTP ni HTTPS, se omite el resto de la Fase 2${NC}"
 else
+
 
 echo -e "${GREEN}[+] Iniciando reconocimiento con Whatweb${NC}"
         echo -e "\n"
@@ -144,18 +150,19 @@ echo "-----------------------------FINAL WHATWEB--------------------------------
 
 	echo -e "\n"
 
-echo -e "${GREEN}[+] Iniciando fuzzing de directorios${NC}"
 
+echo -e "${GREEN}[+] Iniciando fuzzing de directorios${NC}"
 mapfile -t encontrados < <(ffuf -c -ic -w /usr/share/dirb/wordlists/common.txt -t 80 -u "${protocol}://${target}/FUZZ" -s)
 
 	echo -e "\n"
 
-echo "[+] Directorios encontrados: ${#encontrados[@]}"
+echo -e "${yellow}[+] Directorios encontrados: ${#encontrados[@]}${NC}"
 
 for dir in "${encontrados[@]}"; do
     echo "${protocol}://${target}/${dir}"
 done
         echo -e "\n"
+
 
 echo -e "${GREEN}[+] Leyendo Robots.txt (si existe)${NC}"
 curl -s "${protocol}://${target}/robots.txt" \
@@ -166,19 +173,27 @@ curl -s "${protocol}://${target}/robots.txt" \
   | sort -u
         echo -e "\n"
 
+
 echo -e "${GREEN}[+] Iniciando descubrimiento de subdominios${NC}"
 
        echo -e "\n"
 
 
-echo "${GREEN}[+] Paso 1: ffuf${NC}"
-ffuf -u "${protocol}://${target}/" \
+echo -e "${GREEN}[+] Paso 1: ffuf${NC}"
+mapfile -t subdominios < <(ffuf -u "${protocol}://${target}/" \
      -H "Host: FUZZ.$target" \
      -w /usr/bin/seclists/Discovery/DNS/subdomains-top1million-5000.txt \
      -mc 200,301,302,403 \
      -fs 0,151 \
-     -s
+     -s)
 
+	echo -e "\n"
+
+echo "${yellow}[+] Subdominios encontrados: ${#subdominios[@]${NC}}"
+
+for sub in "${subdominios[@]}"; do
+    echo "${protocol}://${sub}.${target}"
+done
         echo -e "\n"
 
 fi
