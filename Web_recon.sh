@@ -44,6 +44,7 @@ target=$1
 
 
 
+
 #FASE 1: Recon pasivo
 
 echo -e "${BIG}[+] Iniciando reconocimiento web para: $target${NC}"
@@ -75,33 +76,89 @@ for ip in "${ips_limitadas[@]}"; do
     ipinfo "$ip"
 done
 
-
 sleep 2
 
 
+echo -e "\n"
+echo -e "\n"
+
+
+
+
 #FASE 2: Recon activo
-        echo -e "\n"
-        echo -e "\n"
 
 echo -e "${YELLOW}[+] Iniciando reconocimiento activo para: $target${NC}"
         echo -e "\n"
 
 
+# Devuelve "https", "http" o "ninguno" según lo que responda el target
+
+detectar_protocolo() {
+    local domain="$1"
+    domain="${domain//[$'\t\r\n ']/}"
+
+    local ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    local code rc
+
+    code=$(curl -s -k -L -A "$ua" \
+            --connect-timeout 5 --max-time 10 \
+            -o /dev/null -w "%{http_code}" "https://$domain")
+    rc=$?
+
+    if [[ $rc -eq 0 && "$code" =~ ^[2-4][0-9]{2}$ ]]; then
+        echo "https"
+        return 0
+    fi
+
+    code=$(curl -s -L -A "$ua" \
+            --connect-timeout 5 --max-time 10 \
+            -o /dev/null -w "%{http_code}" "http://$domain")
+    rc=$?
+
+    if [[ $rc -eq 0 && "$code" =~ ^[2-4][0-9]{2}$ ]]; then
+        echo "http"
+        return 0
+    fi
+
+    echo "ninguno"
+    return 1
+}
+
+# ---------------------------------------------------------
+# Llamada a la función y comprobación (fase de pruebas)
+# ---------------------------------------------------------
+echo -e "${GREEN}[+] Detectando protocolo (HTTP/HTTPS)${NC}"
+protocol=$(detectar_protocolo "$target")
+echo "[DEBUG] Valor de \$protocol -> [$protocol]"
+
+if [[ "$protocol" == "ninguno" ]]; then
+    echo -e "${YELLOW}[-] $target no responde por HTTP ni HTTPS, se omite el resto de la Fase 2${NC}"
+else
+
 echo -e "${GREEN}[+] Iniciando reconocimiento con Whatweb${NC}"
         echo -e "\n"
 
 echo "-----------------------------INICIO WHATWEB--------------------------------------"
-whatweb -v $target
+whatweb -v "${protocol}://${target}"
 echo "-----------------------------FINAL WHATWEB---------------------------------------"
 
 	echo -e "\n"
+
 echo -e "${GREEN}[+] Iniciando fuzzing de directorios${NC}"
-ffuf -c -ic -w /usr/share/dirb/wordlists/common.txt -t 80 -u https://$target/FUZZ -s
+
+mapfile -t encontrados < <(ffuf -c -ic -w /usr/share/dirb/wordlists/common.txt -t 80 -u "${protocol}://${target}/FUZZ" -s)
+
+	echo -e "\n"
+
+echo "[+] Directorios encontrados: ${#encontrados[@]}"
+
+for dir in "${encontrados[@]}"; do
+    echo "${protocol}://${target}/${dir}"
+done
         echo -e "\n"
 
-
-echo -e "${GREEN}[+] Leyendo Robots.txt${NC}"
-curl -s "https://$target/robots.txt" \
+echo -e "${GREEN}[+] Leyendo Robots.txt (si existe)${NC}"
+curl -s "${protocol}://${target}/robots.txt" \
   | grep -Ev '^\s*#|^\s*$' \
   | grep -Ei '^(disallow|allow):' \
   | awk -F': ' '{print $2}' \
@@ -109,19 +166,22 @@ curl -s "https://$target/robots.txt" \
   | sort -u
         echo -e "\n"
 
-
 echo -e "${GREEN}[+] Iniciando descubrimiento de subdominios${NC}"
-        echo -e "\n"
+
+       echo -e "\n"
 
 
-echo -e "${GREEN}[+] Paso 1: ffuf${NC}"
-
-ffuf -u https://$target/ \
+echo "${GREEN}[+] Paso 1: ffuf${NC}"
+ffuf -u "${protocol}://${target}/" \
      -H "Host: FUZZ.$target" \
      -w /usr/bin/seclists/Discovery/DNS/subdomains-top1million-5000.txt \
      -mc 200,301,302,403 \
-     -fs 0,151
+     -fs 0,151 \
+     -s
+
         echo -e "\n"
+
+fi
 
 
 echo -e "${GREEN}[+] Paso 2: crt.sh${NC}"
