@@ -13,7 +13,7 @@ El script se divide en dos fases:
 
 - **WHOIS**: información de registro del dominio.
 - **Resolución DNS**: registros A vía `dig`, limitado a las primeras IPs resueltas.
-- **IP info**: geolocalización y datos de cada IP resuelta.
+- **IP info**: script de geolocalización aproximada y datos de cada IP resuelta (ISP, ASN, DNS inverso).
 
 ### Fase 2 — Reconocimiento activo
 
