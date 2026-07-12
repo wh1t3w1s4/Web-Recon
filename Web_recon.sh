@@ -129,6 +129,17 @@ consultar_crtsh() {
 }
 #-------------------------------------------------------------------------------------------------------------------
 
+HTTPX_BIN="${HTTPX_BIN:-$HOME/go/bin/httpx}"
+
+if [[ -x "$HTTPX_BIN" ]]; then
+    httpx_disponible=true
+    echo -e "${GREEN}[+] httpx (ProjectDiscovery) detectado en $HTTPX_BIN${NC}"
+else
+    httpx_disponible=false
+    echo -e "${YELLOW}[!] httpx de ProjectDiscovery no encontrado en $HTTPX_BIN${NC}"
+    echo -e "${YELLOW}    Instálalo con: go install github.com/projectdiscovery/httpx/cmd/httpx@latest${NC}"
+    echo -e "${YELLOW}    Se usará un fallback con curl para resolver hallazgos repetidos${NC}"
+fi
 
 
 
@@ -190,12 +201,15 @@ else
 
 # Whatweb verbose mode
 echo -e "${GREEN}[+] Iniciando reconocimiento con Whatweb${NC}"
-        echo -e "\n"
+whatweb_output=$(whatweb -v "${protocol}://${target}" 2>/dev/null)
 
-echo "-----------------------------INICIO WHATWEB--------------------------------------"
-whatweb -v "${protocol}://${target}"
-echo "-----------------------------FINAL WHATWEB---------------------------------------"
-
+if echo "$whatweb_output" | grep -qi "cloudflare" && echo "$whatweb_output" | grep -Eqi "403 Forbidden|Just a moment"; then
+    echo -e "${YELLOW}[-] Cloudflare detectado, omitiendo este paso${NC}"
+else
+    echo "-----------------------------INICIO WHATWEB--------------------------------------"
+    echo "$whatweb_output"
+    echo "-----------------------------FINAL WHATWEB----------------------------------------"
+fi
 	echo -e "\n"
 
 
@@ -205,34 +219,43 @@ echo -e "${GREEN}[+] Iniciando fuzzing de directorios${NC}"
 umbral_ruido=5
 tmp_json=$(mktemp)
 
-ffuf -ic -w /usr/share/dirb/wordlists/big.txt -t 80 \
+ffuf -ic -ac -s -w /usr/share/dirb/wordlists/big.txt -t 80 \
      -u "${protocol}://${target}/FUZZ" \
      -o "$tmp_json" -of json 2>/dev/null
 
 total_resultados=$(jq '.results | length' "$tmp_json")
 echo "[+] Resultados totales: $total_resultados"
 
+
 tmp_data=$(mktemp)
-jq -r '.results[] | "\(.url)|\(.words)|\(.lines)"' "$tmp_json" > "$tmp_data"
+jq -r '.results[] | "\(.url)|\(.status)|\(.words)|\(.lines)"' "$tmp_json" > "$tmp_data"
 rm -f "$tmp_json"
 
+
 declare -A conteo
-while IFS='|' read -r url words lines; do
-    clave="${words}|${lines}"
+while IFS='|' read -r url status words lines; do
+    [[ "$status" == 3* ]] && continue   # las redirecciones nunca cuentan para detectar ruido
+    clave="${status}|${words}|${lines}"
     conteo["$clave"]=$(( ${conteo["$clave"]:-0} + 1 ))
 done < "$tmp_data"
 
 limpios=()
 sospechosos=()
-while IFS='|' read -r url words lines; do
-    clave="${words}|${lines}"
-    if (( ${conteo["$clave"]} > umbral_ruido )); then
+while IFS='|' read -r url status words lines; do
+    if [[ "$status" == 3* ]]; then
+        limpios+=("$url")
+        continue
+    fi
+    clave="${status}|${words}|${lines}"
+    if (( ${conteo["$clave"]:-0} > umbral_ruido )); then
         sospechosos+=("$url")
     else
         limpios+=("$url")
     fi
 done < "$tmp_data"
 rm -f "$tmp_data"
+
+
         echo -e "\n"
 
 echo -e "${GREEN}[+] Resultados únicos (patrón no repetido):${NC}"
@@ -241,13 +264,21 @@ for url in "${limpios[@]}"; do
 done
 
 if (( ${#sospechosos[@]} > 0 )); then
-    echo -e "${YELL}[+] ${#sospechosos[@]} resultados con patrón repetido (>${umbral_ruido} veces, mismas words/lines). Resolviendo:${NC}"
+    echo -e "${YELL}[+] ${#sospechosos[@]} resultados con patrón repetido (>${umbral_ruido} veces, mismo status/words/lines). Resolviendo:${NC}"
 
     if [[ "$httpx_disponible" == true ]]; then
         printf '%s\n' "${sospechosos[@]}" | "$HTTPX_BIN" -silent -sc -title -nc
     else
+        echo -e "${YELLOW}[!] httpx no disponible, usando fallback con curl (más lento, limitado a 50 URLs)${NC}"
+        max_resolver=50
+        count=0
         for url in "${sospechosos[@]}"; do
+            if (( count >= max_resolver )); then
+                echo "[...] Límite de $max_resolver alcanzado, resto omitido (instala httpx para resolver todo)"
+                break
+            fi
             resolver_con_curl "$url"
+            (( count++ ))
         done
     fi
 else
@@ -312,4 +343,29 @@ for fqdn in "${subs_totales[@]}"; do
     echo "$fqdn"
 done
 
+fi
+
+	echo -e "\n"
+
+# Verificando subdominios vivos
+echo -e "${GREEN}[+] Verificando cuáles subdominios responden (httpx)${NC}"
+
+if [[ "$httpx_disponible" == true ]]; then
+    printf '%s\n' "${subs_totales[@]}" | "$HTTPX_BIN" -silent -sc -title -nc -fc 404
+else
+    echo -e "${YELLOW}[!] httpx no disponible, usando fallback con curl (más lento, limitado a 50)${NC}"
+    max_resolver=50
+    count=0
+    for fqdn in "${subs_totales[@]}"; do
+        if (( count >= max_resolver )); then
+            echo "[...] Límite de $max_resolver alcanzado, resto omitido"
+            break
+        fi
+        resultado=$(resolver_con_curl "${protocol}://${fqdn}")
+        # Filtra líneas cuyo código de estado sea 404
+        if [[ ! "$resultado" =~ ^\[404\] ]]; then
+            echo "$resultado"
+        fi
+        (( count++ ))
+    done
 fi
