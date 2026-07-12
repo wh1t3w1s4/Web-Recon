@@ -1,4 +1,4 @@
-# Web-Recon-v1.0-Beta
+# Web-Recon-v0.1.0-alpha
 The web reconnaissance tool by w1s4
 
 Web-Recon es un script en bash para automatizar la fase de reconocimiento (pasivo y activo) sobre un dominio objetivo. Encadena varias herramientas estándar de recon y aplica algo de lógica propia para reducir ruido en los resultados (filtrado de falsos positivos en fuzzing, detección de wildcard, agrupación de patrones repetidos, etc.).
