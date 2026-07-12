@@ -53,9 +53,9 @@ Si falta alguna dependencia, el script avisa al inicio e indica el comando de in
 ## Instalación
 
 ```bash
-git clone <url-del-repo>
-cd <carpeta-del-repo>
-chmod +x web_recon3.sh
+git clone https://github.com/wh1t3w1s4/Web-Recon
+cd Web-Recon
+chmod +x web_recon.sh
 ```
 
 Instala las dependencias de la tabla anterior según tu distribución. Si usas Go, asegúrate de que `$HOME/go/bin` esté en tu `$PATH` para las herramientas instaladas con `go install` (o usa `HTTPX_BIN` como se indica arriba).
@@ -63,13 +63,13 @@ Instala las dependencias de la tabla anterior según tu distribución. Si usas G
 ## Uso
 
 ```bash
-./web_recon3.sh <dominio>
+./web_recon.sh <dominio>
 ```
 
 Ejemplo:
 
 ```bash
-./web_recon3.sh ejemplo.com
+./web_recon.sh ejemplo.com
 ```
 
 Si el dominio no responde por HTTP ni HTTPS, la Fase 2 se omite automáticamente y el script informa del motivo.
