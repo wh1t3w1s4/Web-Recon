@@ -34,7 +34,26 @@ El script se divide en dos fases:
   - Unión y deduplicación de ambas fuentes.
   - Verificación de cuáles subdominios responden realmente, filtrando 404s.
 
-## Dependencias
+## Requisitos del sistema
+
+Probado en **Debian/Ubuntu**. No hay soporte todavía para Arch, Fedora o macOS — el instalador (`setup.sh`) asume `apt` como gestor de paquetes.
+
+
+## Instalación / Dependencias
+
+La forma recomendada es usar el script de instalación incluido, que resuelve todas las dependencias automáticamente (paquetes de sistema, herramientas Go, wafw00f, wpscan, la wordlist de SecLists e `ipinfo`):
+
+```bash
+git clone https://github.com/wh1t3w1s4/Web-Recon
+cd Web-Recon
+chmod +x setup.sh
+./setup.sh
+```
+
+Al terminar, `setup.sh` muestra un resumen indicando qué dependencias quedaron instaladas correctamente y cuáles requieren atención manual.
+
+Si prefieres instalar todo a mano, consulta la tabla de dependencias a continuación.
+
 
 | Herramienta | Uso | Instalación manual |
 |---|---|---|
@@ -52,25 +71,6 @@ El script se divide en dos fases:
 Si falta alguna dependencia, el script avisa al inicio e indica el comando de instalación. Las fases que dependen de una herramienta ausente se omiten o caen a un fallback (por ejemplo, `curl` en lugar de `httpx`) en vez de interrumpir la ejecución completa.
 
 > Nota: `httpx` de ProjectDiscovery puede entrar en conflicto con el paquete de Python del mismo nombre (`pip install httpx`, un cliente HTTP). El script referencia el binario por ruta absoluta (`$HOME/.go/bin/httpx` por defecto) para evitar ambigüedad. Si lo tienes en otra ubicación, puedes indicarlo con la variable de entorno `HTTPX_BIN`.
-
-## Requisitos del sistema
-
-Probado en **Debian/Ubuntu**. No hay soporte todavía para Arch, Fedora o macOS — el instalador (`setup.sh`) asume `apt` como gestor de paquetes.
-
-## Instalación
-
-La forma recomendada es usar el script de instalación incluido, que resuelve todas las dependencias automáticamente (paquetes de sistema, herramientas Go, wafw00f, wpscan, la wordlist de SecLists e `ipinfo`):
-
-```bash
-git clone https://github.com/wh1t3w1s4/Web-Recon
-cd Web-Recon
-chmod +x setup.sh
-./setup.sh
-```
-
-Al terminar, `setup.sh` muestra un resumen indicando qué dependencias quedaron instaladas correctamente y cuáles requieren atención manual.
-
-Si prefieres instalar todo a mano, consulta la tabla de dependencias más arriba.
 
 ## Uso
 
