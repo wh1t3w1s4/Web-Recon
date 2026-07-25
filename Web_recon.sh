@@ -200,9 +200,11 @@ echo "$(whois $target | head -n 20)"
 
 
 echo -e "${GREEN}[+] Iniciando reconocimiento IP${NC}"
-ips=($(dig A +short "$target"))
-echo -e "IPs encontradas:\n $ips"
 
+ips=($(dig A +short "$target"))
+
+echo -e "IPs encontradas: ${#ips[@]}"
+printf '%s\n' "${ips[@]}"
 
 max=4
 ips_limitadas=("${ips[@]:0:$max}")
