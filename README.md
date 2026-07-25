@@ -3,7 +3,7 @@ The web reconnaissance tool by w1s4
 
 Web-Recon es un script en bash para automatizar la fase de reconocimiento (pasivo y activo) sobre un dominio objetivo. Encadena varias herramientas estándar de recon y aplica algo de lógica propia para reducir ruido en los resultados (filtrado de falsos positivos en fuzzing, detección de wildcard, agrupación de patrones repetidos, etc.).
 
-Pensado para uso en auditorías, CTFs, bug bounty o programas de pentesting donde se cuenta con autorización explícita sobre el objetivo.
+Esta herramienta está pensada únicamente para uso en auditorías, CTFs, bug bounty o programas de pentesting donde se cuenta con autorización explícita sobre el objetivo.
 
 ## Qué hace
 
@@ -13,7 +13,7 @@ El script se divide en dos fases:
 
 - **WHOIS**: información de registro del dominio.
 - **Resolución DNS**: registros A vía `dig`, limitado a las primeras IPs resueltas.
-- **IP info**: script de geolocalización aproximada y datos de cada IP resuelta (ISP, ASN, DNS inverso).
+- **IP info**: script propio de geolocalización aproximada y datos de cada IP resuelta (ISP, ASN, DNS inverso).
 
 ### Fase 2 — Reconocimiento activo
 
@@ -28,7 +28,7 @@ El script se divide en dos fases:
 - **robots.txt**: extracción de rutas `Disallow`/`Allow`, filtrando comentarios y líneas irrelevantes.
 - **Descubrimiento de subdominios**:
   - `subfinder` como fuente principal.
-  - `crt.sh` (Certificate Transparency) como fuente complementaria, con reintentos y backoff si el servicio da rate-limit.
+  - `crt.sh` (Certificate Transparency) como fuente complementaria, con reintentos y backoff si el servicio da rate-limit, lo cual es común al realizarle peticiones desde curl.
   - Unión y deduplicación de ambas fuentes.
   - Verificación de cuáles subdominios responden realmente, filtrando 404s.
 
@@ -48,7 +48,7 @@ El script se divide en dos fases:
 
 Si falta alguna dependencia, el script avisa al inicio e indica el comando de instalación. Las fases que dependen de una herramienta ausente se omiten o caen a un fallback (por ejemplo, `curl` en lugar de `httpx`) en vez de interrumpir la ejecución completa.
 
-> Nota: `httpx` de ProjectDiscovery puede entrar en conflicto con el paquete de Python del mismo nombre (`pip install httpx`, un cliente HTTP). El script referencia el binario por ruta absoluta (`$HOME/go/bin/httpx` por defecto) para evitar ambigüedad. Si lo tienes en otra ubicación, puedes indicarlo con la variable de entorno `HTTPX_BIN`.
+> Nota: `httpx` de ProjectDiscovery puede entrar en conflicto con el paquete de Python del mismo nombre (`pip install httpx`, un cliente HTTP). El script referencia el binario por ruta absoluta (`$HOME/.go/bin/httpx` por defecto) para evitar ambigüedad. Si lo tienes en otra ubicación, puedes indicarlo con la variable de entorno `HTTPX_BIN`.
 
 ## Instalación
 
@@ -58,7 +58,7 @@ cd Web-Recon
 chmod +x web_recon.sh
 ```
 
-Instala las dependencias de la tabla anterior según tu distribución. Si usas Go, asegúrate de que `$HOME/go/bin` esté en tu `$PATH` para las herramientas instaladas con `go install` (o usa `HTTPX_BIN` como se indica arriba).
+Instala las dependencias de la tabla anterior según tu distribución. Si usas Go, asegúrate de que `$HOME/.go/bin` esté en tu `$PATH` para las herramientas instaladas con `go install` (o usa `HTTPX_BIN` como se indica arriba).
 
 ## Uso
 
@@ -78,13 +78,12 @@ Si el dominio no responde por HTTP ni HTTPS, la Fase 2 se omite automáticamente
 
 Por defecto el script usa wordlists locales para fuzzing de directorios y subdominios (ajustables directamente en el script). Revisa las rutas configuradas antes de ejecutar si tu wordlist está en otra ubicación:
 
-- Directorios: `big.txt` (SecLists u otra de tu elección)
+- Directorios: `big.txt` (SecLists de Danielmiessler)
 - Subdominios (vía subfinder): no requiere wordlist propia, usa fuentes OSINT
 
 ## Pendiente / roadmap
 
 - Exportación de resultados a un archivo/carpeta estructurada por dominio y timestamp.
-- Escaneo de puertos (nmap) sobre las IPs resueltas.
 - Script de instalación (`start.sh`) que resuelva dependencias automáticamente.
 - Reporte final consolidado (texto/markdown) con el resumen de todas las fases.
 - Screenshots de subdominios/directorios vivos.
