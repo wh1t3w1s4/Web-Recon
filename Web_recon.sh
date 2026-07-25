@@ -11,6 +11,8 @@ YELL='\033[0;33m'
 BIG='\033[1;32m'
 
 
+WPSCAN_API_TOKEN="${WPSCAN_API_TOKEN:-}"
+
 #--------------------------------BANNER-----------------------------------
 banner() {
 clear
@@ -96,7 +98,6 @@ resolver_con_curl() {
 #-------------------------------------------------------------------------------------------------------------
 # Función: consultar_crtsh
 # Realiza peticiones a https://crt.sh/$domain y lo exporta en JSON
-
 consultar_crtsh() {
     local domain="$1"
     local raw
@@ -128,8 +129,8 @@ consultar_crtsh() {
     return 1
 }
 #-------------------------------------------------------------------------------------------------------------------
-
-HTTPX_BIN="${HTTPX_BIN:-$HOME/go/bin/httpx}"
+# Detectar instalación de httpx (projectdiscovery)
+HTTPX_BIN="${HTTPX_BIN:-$HOME/.go/bin/httpx}"
 
 if [[ -x "$HTTPX_BIN" ]]; then
     httpx_disponible=true
@@ -141,6 +142,43 @@ else
     echo -e "${YELLOW}    Se usará un fallback con curl para resolver hallazgos repetidos${NC}"
 fi
 
+#--------------------------------------------------------------------------------------------------------------------
+# Detectar instalación de wafw00f
+if ! command -v wafw00f &> /dev/null; then
+    echo -e "${YELLOW}[!] wafw00f no está instalado, se omitirá la detección de WAF${NC}"
+    echo -e "${YELLOW}    Instálalo con: sudo apt install wafw00f${NC}"
+    wafw00f_disponible=false
+else
+    wafw00f_disponible=true
+fi
+#--------------------------------------------------------------------------------------------------------------------
+# Detectar instalación de WP-Scan
+if ! command -v wpscan &> /dev/null; then
+    echo -e "${YELLOW}[!] wpscan no está instalado, se omitirá el análisis de WordPress si se detecta${NC}"
+    echo -e "${YELLOW}    Instálalo con: gem install wpscan${NC}"
+    wpscan_disponible=false
+else
+    wpscan_disponible=true
+fi
+#--------------------------------------------------------------------------------------------------------------------
+# Función: analizar_wordpress
+# Lanza wpscan si whatweb detectó WordPress.
+analizar_wordpress() {
+    local url="$1"
+    local args=(--no-banner --random-user-agent -e vp,vt,tt,u1-5 --disable-tls-checks -f cli-no-color)
+
+    if [[ -n "$WPSCAN_API_TOKEN" ]]; then
+        args+=(--api-token "$WPSCAN_API_TOKEN")
+    fi
+
+    local salida
+    salida=$(wpscan --url "$url" "${args[@]}" 2>/dev/null)
+
+    echo "$salida" \
+        | grep -E '^\[\+\]' \
+        | grep -Ev 'WPScan DB|WordPress version|The remote website|URL:|Started:|Requests Done|Cached Requests|Data Sent|Data Received|Memory used|Elapsed time'
+}
+#--------------------------------------------------------------------------------------------------------------------
 
 
 #FASE 1: Recon pasivo
@@ -213,7 +251,28 @@ fi
 	echo -e "\n"
 
 
+# Llamada a WP_Scan
+if [[ "$wpscan_disponible" == true ]] && echo "$whatweb_output" | grep -qi "wordpress"; then
+    echo -e "${GREEN}[+] WordPress detectado, lanzando wpscan${NC}"
+    resultado_wpscan=$(analizar_wordpress "${protocol}://${target}")
 
+    if [[ -n "$resultado_wpscan" ]]; then
+        echo "$resultado_wpscan"
+    else
+        echo "[-] wpscan no reportó hallazgos relevantes"
+    fi
+fi
+
+
+# Llamada a wafw00f
+if [[ "$wafw00f_disponible" == true ]]; then
+    echo -e "${GREEN}[+] Comprobando WAF (wafw00f)${NC}"
+    wafw00f_output=$(wafw00f "${protocol}://${target}" 2>/dev/null)
+    echo "$wafw00f_output" | grep -E '^\[\*\]|^\[\+\]|^\[-\]' | grep -v "Number of requests"
+fi
+	echo -e "\n"
+
+# Fuzzing de directorios con ffuf (20k rutas)
 echo -e "${GREEN}[+] Iniciando fuzzing de directorios${NC}"
 
 umbral_ruido=5
