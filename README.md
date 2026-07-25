@@ -72,7 +72,7 @@ Ejemplo:
 ./web_recon.sh ejemplo.com
 ```
 
-Si el dominio no responde por HTTP ni HTTPS, la Fase 2 se omite automáticamente y el script informa del motivo.
+Si el dominio no responde por HTTP ni HTTPS, la Fase 2 se omite automáticamente, el script informa del motivo y se finaliza la ejecución del script.
 
 ## Wordlists
 
