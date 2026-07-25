@@ -26,7 +26,7 @@ cat << "EOF"
 EOF
 echo -e "${NC}"
 echo -e "${YELLOW}         >> Web Reconnaissance Tool <<${NC}"
-echo -e "${GREEN}         Version 1.0 - by w1s4${NC}"
+echo -e "${GREEN}         Version 0.1.0 - by w1s4${NC}"
 echo -e "${CYAN}=========================================================${NC}"
 echo ""
 }
@@ -134,7 +134,7 @@ HTTPX_BIN="${HTTPX_BIN:-$HOME/.go/bin/httpx}"
 
 if [[ -x "$HTTPX_BIN" ]]; then
     httpx_disponible=true
-    echo -e "${GREEN}[+] httpx (ProjectDiscovery) detectado en $HTTPX_BIN${NC}"
+    echo -e ""
 else
     httpx_disponible=false
     echo -e "${YELLOW}[!] httpx de ProjectDiscovery no encontrado en $HTTPX_BIN${NC}"
