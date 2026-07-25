@@ -84,7 +84,6 @@ Por defecto el script usa wordlists locales para fuzzing de directorios y subdom
 ## Pendiente / roadmap
 
 - Exportación de resultados a un archivo/carpeta estructurada por dominio y timestamp.
-- Script de instalación (`start.sh`) que resuelva dependencias automáticamente.
 - Reporte final consolidado (texto/markdown) con el resumen de todas las fases.
 - Screenshots de subdominios/directorios vivos.
 
