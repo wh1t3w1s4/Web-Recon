@@ -89,26 +89,25 @@ Si el dominio no responde por HTTP ni HTTPS, la Fase 2 se omite automáticamente
 ### Ejemplo de salida completa
 
 ```
-[H[2J[3J[0;36m
  __        __   _      ____                       
  \ \      / /__| |__  |  _ \ ___  ___ ___  _ __    
   \ \ /\ / / _ \ '_ \ | |_) / _ \/ __/ _ \| '_ \   
    \ V  V /  __/ '_ \ | |  / __/  __\ (_) | | | |  
     \_/\_/ \___|_.__/_|_| \_\___|\___\___/|_| |_|  
-[0m
-[1;33m         >> Web Reconnaissance Tool <<[0m
-[0;32m         Version 0.1.0 - by w1s4[0m
-[0;36m=========================================================[0m
+
+         >> Web Reconnaissance Tool <<[0m
+         Version 0.1.0 - by w1s4[0m
+=========================================================[0m
 
 
-[1;32m[+] Iniciando reconocimiento web para: domain.com[0m
+[+] Iniciando reconocimiento web para: domain.com[0m
 Fecha: sáb 25 jul 2026 23:07:00 CEST
 
 
-[1;33m[+] Iniciando reconocimiento pasivo para: domain.com[0m
+[+] Iniciando reconocimiento pasivo para: domain.com[0m
 
 
-[0;32m[+] Iniciando reconocimiento WHOIS[0m
+[+] Iniciando reconocimiento WHOIS[0m
    Domain Name: DOMAIN.COM
    Registry Domain ID: 2726597102_DOMAIN_COM-VRSN
    Registrar WHOIS Server: whois.registrar.eu
@@ -129,40 +128,40 @@ Fecha: sáb 25 jul 2026 23:07:00 CEST
 
 
 
-[0;32m[+] Iniciando reconocimiento IP[0m
+[+] Iniciando reconocimiento IP[0m
 IPs encontradas: 1
 82.223.XXX.123
 
-[1m[96m──────────────────────────────────────────────────[0m
-  [1mAnálisis de 82.223.XXX.123[0m
-[1m[96m──────────────────────────────────────────────────[0m
-  [90mVersión               [0m[94mIPv4[0m
-  [90mTipo                  [0m[92mPública[0m
-  [90mVisibilidad           [0m[92mEnrutable en Internet[0m
-  [90mDNS inverso           [0m[96msvr2k8-1.portaldetuciudad.es[0m
-  [90mPaís                  [0mSpain
-  [90mRegión / Ciudad       [0mMadrid / Madrid
-  [90mISP                   [0marsys.es
-  [90mOrganización          [0m
-  [90mASN                   [0mAS8560 IONOS SE
-  [90mHosting / Datacenter  [0m[93mSí[0m
+──────────────────────────────────────────────────[0m
+Análisis de 82.223.XXX.123[0m
+──────────────────────────────────────────────────[0m
+Versión               [0m[94mIPv4[0m
+Tipo                  [0m[92mPública[0m
+Visibilidad           [0m[92mEnrutable en Internet[0m
+DNS inverso           [0m[96msvr2k8-1.portaldetuciudad.es[0m
+País                  [0mSpain
+Región / Ciudad       [0mMadrid / Madrid
+ISP                   [0marsys.es
+Organización          [0m
+ASN                   [0mAS8560 IONOS SE
+Hosting / Datacenter  [0m[93mSí[0m
 
   [92m✔  IP pública directa sin CDN conocida[0m
 
 
 
-[1;33m[+] Iniciando reconocimiento activo para: domain.com[0m
+[+] Iniciando reconocimiento activo para: domain.com[0m
 
 
 
 
-[0;32m[+] Detectando protocolo (HTTP/HTTPS)[0m
+[+] Detectando protocolo (HTTP/HTTPS)[0m
 
 
 Protocolo detectado -> https
 
 
-[0;32m[+] Iniciando reconocimiento con Whatweb[0m
+[+] Iniciando reconocimiento con Whatweb[0m
 -----------------------------INICIO WHATWEB--------------------------------------
 WhatWeb report for [1m[34mhttps://domain.com[0m
 Status    : 200 OK
@@ -321,14 +320,14 @@ https://domain.com/sitemap_xml
 [+] No se detectaron grupos de ruido repetido
 
 
-[0;32m[+] Leyendo Robots.txt (si existe)[0m
+[+] Leyendo Robots.txt (si existe)[0m
 
 
-[0;33m[+] Iniciando descubrimiento de subdominios[0m
+[+] Iniciando descubrimiento de subdominios[0m
 
 
-[0;32m[+] Paso 1: subfinder[0m
-[0;33m[+] Subdominios encontrados por subfinder: 7[0m
+[+] Paso 1: subfinder[0m
+[+] Subdominios encontrados por subfinder: 7[0m
 https://mail.domain.com
 https://webdisk.domain.com
 https://webmail.domain.com
@@ -338,7 +337,7 @@ https://cpcalendars.domain.com
 https://cpcontacts.domain.com
 
 
-[0;32m[+] Paso 2: crt.sh[0m
+[+] Paso 2: crt.sh[0m
 [+] crt.sh: 8 entradas encontradas
 cpanel.domain.com
 cpcalendars.domain.com
@@ -350,8 +349,8 @@ webmail.domain.com
 www.domain.com
 
 
-[0;32m[+] Resumen final de subdominios (subfinder + crt.sh)[0m
-[0;33m[+] Total únicos combinados: 8[0m
+[+] Resumen final de subdominios (subfinder + crt.sh)[0m
+[+] Total únicos combinados: 8[0m
   - subfinder: 7
   - crt.sh:    8
 
@@ -366,7 +365,7 @@ webmail.domain.com
 www.domain.com
 
 
-[0;32m[+] Verificando cuáles subdominios responden (httpx)[0m
+[+] Verificando cuáles subdominios responden (httpx)[0m
 https://mail.domain.com [301] [301 Moved Permanently]
 https://webdisk.domain.com [401]
 https://webmail.domain.com [200] [Nombre de usuario para el webmail]
