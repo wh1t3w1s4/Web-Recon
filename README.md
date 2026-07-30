@@ -89,25 +89,26 @@ Si el dominio no responde por HTTP ni HTTPS, la Fase 2 se omite automáticamente
 ### Ejemplo de salida completa
 
 ```
+
  __        __   _      ____                       
  \ \      / /__| |__  |  _ \ ___  ___ ___  _ __    
   \ \ /\ / / _ \ '_ \ | |_) / _ \/ __/ _ \| '_ \   
    \ V  V /  __/ '_ \ | |  / __/  __\ (_) | | | |  
     \_/\_/ \___|_.__/_|_| \_\___|\___\___/|_| |_|  
 
-         >> Web Reconnaissance Tool <<[0m
-         Version 0.1.0 - by w1s4[0m
-=========================================================[0m
+         >> Web Reconnaissance Tool <<
+         Version 0.1.0 - by w1s4
+=========================================================
 
 
-[+] Iniciando reconocimiento web para: domain.com[0m
+[+] Iniciando reconocimiento web para: domain.com
 Fecha: sáb 25 jul 2026 23:07:00 CEST
 
 
-[+] Iniciando reconocimiento pasivo para: domain.com[0m
+[+] Iniciando reconocimiento pasivo para: domain.com
 
 
-[+] Iniciando reconocimiento WHOIS[0m
+[+] Iniciando reconocimiento WHOIS
    Domain Name: DOMAIN.COM
    Registry Domain ID: 2726597102_DOMAIN_COM-VRSN
    Registrar WHOIS Server: whois.registrar.eu
@@ -128,73 +129,73 @@ Fecha: sáb 25 jul 2026 23:07:00 CEST
 
 
 
-[+] Iniciando reconocimiento IP[0m
+[+] Iniciando reconocimiento IP
 IPs encontradas: 1
 82.223.XXX.123
 
-──────────────────────────────────────────────────[0m
-Análisis de 82.223.XXX.123[0m
-──────────────────────────────────────────────────[0m
-Versión               [0m[94mIPv4[0m
-Tipo                  [0m[92mPública[0m
-Visibilidad           [0m[92mEnrutable en Internet[0m
-DNS inverso           [0m[96msvr2k8-1.portaldetuciudad.es[0m
-País                  [0mSpain
-Región / Ciudad       [0mMadrid / Madrid
-ISP                   [0marsys.es
-Organización          [0m
-ASN                   [0mAS8560 IONOS SE
-Hosting / Datacenter  [0m[93mSí[0m
+──────────────────────────────────────────────────
+  Análisis de 82.223.XXX.123
+──────────────────────────────────────────────────
+  Versión               IPv4
+  Tipo                  Pública
+  Visibilidad           Enrutable en Internet
+  DNS inverso           svr2k8-1.portaldetuciudad.es
+  País                  Spain
+  Región / Ciudad       Madrid / Madrid
+  ISP                   arsys.es
+  Organización          
+  ASN                   AS8560 IONOS SE
+  Hosting / Datacenter  Sí
 
-  [92m✔  IP pública directa sin CDN conocida[0m
-
-
-
-[+] Iniciando reconocimiento activo para: domain.com[0m
+  ✔  IP pública directa sin CDN conocida
 
 
 
+[+] Iniciando reconocimiento activo para: domain.com
 
-[+] Detectando protocolo (HTTP/HTTPS)[0m
+
+
+
+[+] Detectando protocolo (HTTP/HTTPS)
 
 
 Protocolo detectado -> https
 
 
-[+] Iniciando reconocimiento con Whatweb[0m
+[+] Iniciando reconocimiento con Whatweb
 -----------------------------INICIO WHATWEB--------------------------------------
-WhatWeb report for [1m[34mhttps://domain.com[0m
+WhatWeb report for https://domain.com
 Status    : 200 OK
-Title     : [1m[33mcoches eléctricos SA - domain.com[0m
+Title     : coches eléctricos SA - domain.com
 IP        : 82.223.132.123
-Country   : [1m[31mSPAIN, ES[0m
+Country   : SPAIN, ES
 
-Summary   : [1mASP_NET[0m[[1m[32m4.0.30319[0m], [1mBootstrap[0m[[1m[32m3.3.7[0m], [1mCookies[0m[[0m[22mASP.NET_SessionId[0m], [1mEmail[0m[[0m[22mjohndoe22@gmail.com[0m], [1mHTML5[0m, [1mHTTPServer[0m[[1m[36mMicrosoft-IIS/8.0[0m], [1mHttpOnly[0m[[0m[22mASP.NET_SessionId[0m], [1mJQuery[0m, [1mMeta-Author[0m[[0m[22mPortaldetuciudad.com[0m], [1mMicrosoft-IIS[0m[[1m[32m8.0[0m], [1mOpen-Graph-Protocol[0m[[1m[32mwebsite[0m], [1mScript[0m[[0m[22mjavascript,text/javascript,text/plain[0m], [1mX-Powered-By[0m[[0m[22mASP.NET[0m]
+Summary   : ASP_NET[4.0.30319], Bootstrap[3.3.7], Cookies[ASP.NET_SessionId], Email[johndoe22@gmail.com], HTML5, HTTPServer[Microsoft-IIS/8.0], HttpOnly[ASP.NET_SessionId], JQuery, Meta-Author[Portaldetuciudad.com], Microsoft-IIS[8.0], Open-Graph-Protocol[website], Script[javascript,text/javascript,text/plain], X-Powered-By[ASP.NET]
 
 Detected Plugins:
-[ [1mASP_NET[0m ]
+[ ASP_NET ]
 	ASP.NET is a free web framework that enables great Web 
 	applications. Used by millions of developers, it runs some 
 	of the biggest sites in the world. 
 
-	Version      : [1m[32m4.0.30319[0m (from X-AspNet-Version HTTP header)
+	Version      : 4.0.30319 (from X-AspNet-Version HTTP header)
 	Google Dorks: (2)
 	Website     : https://www.asp.net/
 
-[ [1mBootstrap[0m ]
+[ Bootstrap ]
 	Bootstrap is an open source toolkit for developing with 
 	HTML, CSS, and JS. 
 
-	Version      : [1m[32m3.3.7[0m
+	Version      : 3.3.7
 	Website     : https://getbootstrap.com/
 
-[ [1mCookies[0m ]
+[ Cookies ]
 	Display the names of cookies in the HTTP headers. The 
 	values are not returned to save on space. 
 
-	String       : [1m[36mASP.NET_SessionId[0m
+	String       : ASP.NET_SessionId
 
-[ [1mEmail[0m ]
+[ Email ]
 	Extract email addresses. Find valid email address and 
 	syntactically invalid email addresses from mailto: link 
 	tags. We match syntactically invalid links containing 
@@ -204,52 +205,52 @@ Detected Plugins:
 	http://www.regular-expressions.info/email.html for valid 
 	email address matching. 
 
-	String       : [1m[36mjohndoe22@gmail.com[0m
+	String       : johndoe22@gmail.com
 
-[ [1mHTML5[0m ]
+[ HTML5 ]
 	HTML version 5, detected by the doctype declaration 
 
 
-[ [1mHTTPServer[0m ]
+[ HTTPServer ]
 	HTTP server header string. This plugin also attempts to 
 	identify the operating system from the server header. 
 
-	String       : [1m[36mMicrosoft-IIS/8.0[0m (from server string)
+	String       : Microsoft-IIS/8.0 (from server string)
 
-[ [1mHttpOnly[0m ]
+[ HttpOnly ]
 	If the HttpOnly flag is included in the HTTP set-cookie 
 	response header and the browser supports it then the cookie 
 	cannot be accessed through client side script - More Info: 
 	http://en.wikipedia.org/wiki/HTTP_cookie 
 
-	String       : [1m[36mASP.NET_SessionId[0m
+	String       : ASP.NET_SessionId
 
-[ [1mJQuery[0m ]
+[ JQuery ]
 	A fast, concise, JavaScript that simplifies how to traverse 
 	HTML documents, handle events, perform animations, and add 
 	AJAX. 
 
 	Website     : http://jquery.com/
 
-[ [1mMeta-Author[0m ]
+[ Meta-Author ]
 	This plugin retrieves the author name from the meta name 
 	tag - info: 
 	http://www.webmarketingnow.com/tips/meta-tags-uncovered.html
 	#author
 
-	String       : [1m[36mPortaldetuciudad.com[0m
+	String       : Portaldetuciudad.com
 
-[ [1mMicrosoft-IIS[0m ]
+[ Microsoft-IIS ]
 	Microsoft Internet Information Services (IIS) for Windows 
 	Server is a flexible, secure and easy-to-manage Web server 
 	for hosting anything on the Web. From media streaming to 
 	web application hosting, IIS's scalable and open 
 	architecture is ready to handle the most demanding tasks. 
 
-	Version      : [1m[32m8.0[0m
+	Version      : 8.0
 	Website     : http://www.iis.net/
 
-[ [1mOpen-Graph-Protocol[0m ]
+[ Open-Graph-Protocol ]
 	The Open Graph protocol enables you to integrate your Web 
 	pages into the social graph. It is currently designed for 
 	Web pages representing profiles of real-world things . 
@@ -257,18 +258,18 @@ Detected Plugins:
 	restaurants. Including Open Graph tags on your Web page, 
 	makes your page equivalent to a Facebook Page. 
 
-	Version      : [1m[32mwebsite[0m
+	Version      : website
 
-[ [1mScript[0m ]
+[ Script ]
 	This plugin detects instances of script HTML elements and 
 	returns the script language/type. 
 
-	String       : [1m[36mjavascript,text/javascript,text/plain[0m
+	String       : javascript,text/javascript,text/plain
 
-[ [1mX-Powered-By[0m ]
+[ X-Powered-By ]
 	X-Powered-By HTTP header 
 
-	String       : [1m[36mASP.NET[0m (from x-powered-by string)
+	String       : ASP.NET (from x-powered-by string)
 
 HTTP Headers:
 	HTTP/1.1 200 OK
@@ -287,12 +288,12 @@ HTTP Headers:
 -----------------------------FINAL WHATWEB----------------------------------------
 
 
-[0;32m[+] Comprobando WAF (wafw00f)[0m
+[+] Comprobando WAF (wafw00f)
 [*] Checking https://domain.com
-[+] The site [1;94mhttps://domain.com[0m is behind [1;96mASP.NET Generic (Microsoft)[0m WAF.
+[+] The site https://domain.com is behind ASP.NET Generic (Microsoft) WAF.
 
 
-[0;32m[+] Iniciando fuzzing de directorios[0m
+[+] Iniciando fuzzing de directorios
 Log
 Resources
 app_themes
@@ -306,7 +307,7 @@ sitemap_xml
 [+] Resultados totales: 10
 
 
-[0;32m[+] Resultados únicos (patrón no repetido):[0m
+[+] Resultados únicos (patrón no repetido):
 https://domain.com/Log
 https://domain.com/Resources
 https://domain.com/app_themes
@@ -320,14 +321,14 @@ https://domain.com/sitemap_xml
 [+] No se detectaron grupos de ruido repetido
 
 
-[+] Leyendo Robots.txt (si existe)[0m
+[+] Leyendo Robots.txt (si existe)
 
 
-[+] Iniciando descubrimiento de subdominios[0m
+[+] Iniciando descubrimiento de subdominios
 
 
-[+] Paso 1: subfinder[0m
-[+] Subdominios encontrados por subfinder: 7[0m
+[+] Paso 1: subfinder
+[+] Subdominios encontrados por subfinder: 7
 https://mail.domain.com
 https://webdisk.domain.com
 https://webmail.domain.com
@@ -337,7 +338,7 @@ https://cpcalendars.domain.com
 https://cpcontacts.domain.com
 
 
-[+] Paso 2: crt.sh[0m
+[+] Paso 2: crt.sh
 [+] crt.sh: 8 entradas encontradas
 cpanel.domain.com
 cpcalendars.domain.com
@@ -349,8 +350,8 @@ webmail.domain.com
 www.domain.com
 
 
-[+] Resumen final de subdominios (subfinder + crt.sh)[0m
-[+] Total únicos combinados: 8[0m
+[+] Resumen final de subdominios (subfinder + crt.sh)
+[+] Total únicos combinados: 8
   - subfinder: 7
   - crt.sh:    8
 
@@ -365,7 +366,7 @@ webmail.domain.com
 www.domain.com
 
 
-[+] Verificando cuáles subdominios responden (httpx)[0m
+[+] Verificando cuáles subdominios responden (httpx)
 https://mail.domain.com [301] [301 Moved Permanently]
 https://webdisk.domain.com [401]
 https://webmail.domain.com [200] [Nombre de usuario para el webmail]
@@ -374,6 +375,7 @@ https://www.domain.com [301] [Document Moved]
 https://domain.com [200] [coches eléctricos SA - domain.com]
 https://cpcontacts.domain.com [401]
 https://cpcalendars.domain.com [401]
+
 
 ```
 
