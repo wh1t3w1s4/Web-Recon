@@ -1,15 +1,12 @@
 #!/bin/bash
 
-
 #Colores
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 YELL='\033[0;33m'
-
 BIG='\033[1;32m'
-
 
 WPSCAN_API_TOKEN="${WPSCAN_API_TOKEN:-}"
 
@@ -30,19 +27,102 @@ echo -e "${GREEN}         Version 0.1.0 - by w1s4${NC}"
 echo -e "${CYAN}=========================================================${NC}"
 echo ""
 }
-
-banner
 #-------------------------------------------------------------------------
 
+#--------------------------------AYUDA-------------------------------------
+mostrar_ayuda() {
+cat << EOF
+Uso: $0 [opciones] <dominio>
 
-# Verificar si se proporcionó un objetivo
-if [ $# -eq 0 ]; then
+Opciones:
+  -o, --output <ruta>   Carpeta base donde se guardarán los resultados (por defecto: ./resultados)
+  -n, --no-export       No crear carpeta ni exportar nada, solo mostrar en pantalla
+  -h, --help            Muestra esta ayuda
+
+Ejemplos:
+  $0 ejemplo.com
+  $0 -o /home/w1s4/pentest ejemplo.com
+  $0 -n ejemplo.com
+EOF
+}
+#-------------------------------------------------------------------------
+
+# ------------------------------ ARGUMENTOS --------------------------------
+EXPORT=true
+OUTPUT_BASE="resultados"
+target=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            mostrar_ayuda
+            exit 0
+            ;;
+        -o|--output)
+            OUTPUT_BASE="$2"
+            shift 2
+            ;;
+        -n|--no-export)
+            EXPORT=false
+            shift
+            ;;
+        -*)
+            echo "Opción desconocida: $1"
+            mostrar_ayuda
+            exit 1
+            ;;
+        *)
+            target="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$target" ]]; then
     echo "Error: Debes proporcionar un dominio como argumento."
-    echo "Uso: $0 example.com"
+    mostrar_ayuda
     exit 1
 fi
+# ---------------------------------------------------------------------------
 
-target=$1
+# ------------------------------ EXPORTACIÓN ---------------------------------
+strip_ansi() {
+    sed -E 's/\x1B\[[0-9;]*[a-zA-Z]//g'
+}
+
+if [[ "$EXPORT" == true ]]; then
+    OUTDIR="${OUTPUT_BASE%/}/${target}_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$OUTDIR"
+    SUBS_FILE="$OUTDIR/subdominios_vivos.txt"
+    WP_FILE="$OUTDIR/wordpress.txt"
+    REPORT_FILE="$OUTDIR/reporte_final.md"
+
+    cat > "$REPORT_FILE" << EOF
+# Reporte de reconocimiento - $target
+
+**Fecha:** $(date '+%Y-%m-%d %H:%M:%S')
+**Herramienta:** Web-Recon v0.1.0-alpha
+
+---
+EOF
+else
+    OUTDIR=""
+fi
+
+# Añade contenido al reporte markdown (no hace nada si -n)
+md() {
+    [[ "$EXPORT" == true ]] && echo -e "$1" | strip_ansi >> "$REPORT_FILE"
+}
+# ---------------------------------------------------------------------------
+
+banner
+
+if [[ "$EXPORT" == true ]]; then
+    echo -e "${GREEN}[+] Resultados se exportarán a: $OUTDIR${NC}"
+else
+    echo -e "${YELLOW}[!] Exportación desactivada (-n), los resultados solo se mostrarán en pantalla${NC}"
+fi
+echo -e "\n"
 
 
 # DEFINIR FUNCIONES
@@ -179,6 +259,37 @@ analizar_wordpress() {
         | grep -Ev 'WPScan DB|WordPress version|The remote website|URL:|Started:|Requests Done|Cached Requests|Data Sent|Data Received|Memory used|Elapsed time'
 }
 #--------------------------------------------------------------------------------------------------------------------
+# Función: consultar_dns_extra
+# Registros MX, TXT, NS, SOA, CNAME, AAAA con +short.
+# Filtra líneas vacías y limpia comillas en TXT.
+consultar_dns_extra() {
+    local domain="$1"
+
+    echo -e "${GREEN}[+] MX (correo)${NC}"
+    dig MX +short "$domain" | grep -v '^\s*$' || echo "  (sin registros)"
+    echo -e "\n"
+
+    echo -e "${GREEN}[+] NS (servidores de nombres)${NC}"
+    dig NS +short "$domain" | grep -v '^\s*$' || echo "  (sin registros)"
+    echo -e "\n"
+
+    echo -e "${GREEN}[+] TXT${NC}"
+    dig TXT +short "$domain" | grep -v '^\s*$' | tr -d '"' || echo "  (sin registros)"
+    echo -e "\n"
+
+    echo -e "${GREEN}[+] SOA${NC}"
+    dig SOA +short "$domain" | grep -v '^\s*$' || echo "  (sin registros)"
+    echo -e "\n"
+
+    echo -e "${GREEN}[+] CNAME${NC}"
+    dig CNAME +short "$domain" | grep -v '^\s*$' || echo "  (ninguno, dominio no es alias)"
+    echo -e "\n"
+
+    echo -e "${GREEN}[+] AAAA (IPv6)${NC}"
+    dig AAAA +short "$domain" | grep -v '^\s*$' || echo "  (sin registros)"
+    echo -e "\n"
+}
+#--------------------------------------------------------------------------------------------------------------------
 
 
 #FASE 1: Recon pasivo
@@ -194,10 +305,17 @@ echo -e "${YELLOW}[+] Iniciando reconocimiento pasivo para: $target${NC}"
 
 
 echo -e "${GREEN}[+] Iniciando reconocimiento WHOIS${NC}"
-echo "$(whois $target | head -n 20)"
+whois_output=$(whois "$target" | head -n 20)
+echo "$whois_output"
+md "\n## Fase 1 — Reconocimiento pasivo\n\n### WHOIS\n\n\`\`\`\n${whois_output}\n\`\`\`"
 
         echo -e "\n"
 
+echo -e "${GREEN}[+] Consultando registros DNS adicionales${NC}"
+dns_extra_output=$(consultar_dns_extra "$target")
+echo "$dns_extra_output"
+md "\n### Registros DNS adicionales\n\n\`\`\`\n$(echo "$dns_extra_output" | strip_ansi)\n\`\`\`"
+	echo -e "\n"
 
 echo -e "${GREEN}[+] Iniciando reconocimiento IP${NC}"
 
@@ -209,9 +327,14 @@ printf '%s\n' "${ips[@]}"
 max=4
 ips_limitadas=("${ips[@]:0:$max}")
 
+ipinfo_output=""
 for ip in "${ips_limitadas[@]}"; do
-    ipinfo "$ip"
+    resultado_ip=$(ipinfo "$ip")
+    echo "$resultado_ip"
+    ipinfo_output+="${resultado_ip}"$'\n\n'
 done
+
+md "\n### IPs resueltas y geolocalización\n\nIPs encontradas: ${#ips[@]}\n\n\`\`\`\n$(printf '%s\n' "${ips[@]}")\n\`\`\`\n\n\`\`\`\n${ipinfo_output}\n\`\`\`"
 
 sleep 2
 
@@ -236,8 +359,10 @@ echo "Protocolo detectado -> $protocol"
 # Error de protocolo
 if [[ "$protocol" == "ninguno" ]]; then
     echo -e "${YELLOW}[-] $target no responde por HTTP ni HTTPS, se omite el resto de la Fase 2${NC}"
+    md "\n## Fase 2 — Reconocimiento activo\n\n**$target no respondió por HTTP ni HTTPS. Fase 2 omitida.**"
 else
 
+md "\n## Fase 2 — Reconocimiento activo\n\n**Protocolo detectado:** $protocol"
 
 # Whatweb verbose mode
 echo -e "${GREEN}[+] Iniciando reconocimiento con Whatweb${NC}"
@@ -245,10 +370,12 @@ whatweb_output=$(whatweb -v "${protocol}://${target}" 2>/dev/null)
 
 if echo "$whatweb_output" | grep -qi "cloudflare" && echo "$whatweb_output" | grep -Eqi "403 Forbidden|Just a moment"; then
     echo -e "${YELLOW}[-] Cloudflare detectado, omitiendo este paso${NC}"
+    md "\n### WhatWeb\n\nCloudflare detectado (403/challenge) — salida omitida."
 else
     echo "-----------------------------INICIO WHATWEB--------------------------------------"
     echo "$whatweb_output"
     echo "-----------------------------FINAL WHATWEB----------------------------------------"
+    md "\n### WhatWeb\n\n\`\`\`\n${whatweb_output}\n\`\`\`"
 fi
 	echo -e "\n"
 
@@ -260,8 +387,13 @@ if [[ "$wpscan_disponible" == true ]] && echo "$whatweb_output" | grep -qi "word
 
     if [[ -n "$resultado_wpscan" ]]; then
         echo "$resultado_wpscan"
+        md "\n### WordPress (wpscan)\n\nWordPress detectado. Ver detalle completo en \`wordpress.txt\`.\n\n\`\`\`\n${resultado_wpscan}\n\`\`\`"
+        if [[ "$EXPORT" == true ]]; then
+            echo "$resultado_wpscan" > "$WP_FILE"
+        fi
     else
         echo "[-] wpscan no reportó hallazgos relevantes"
+        md "\n### WordPress (wpscan)\n\nWordPress detectado, pero wpscan no reportó hallazgos relevantes."
     fi
 fi
 
@@ -270,7 +402,9 @@ fi
 if [[ "$wafw00f_disponible" == true ]]; then
     echo -e "${GREEN}[+] Comprobando WAF (wafw00f)${NC}"
     wafw00f_output=$(wafw00f "${protocol}://${target}" 2>/dev/null)
-    echo "$wafw00f_output" | grep -E '^\[\*\]|^\[\+\]|^\[-\]' | grep -v "Number of requests"
+    wafw00f_filtrado=$(echo "$wafw00f_output" | grep -E '^\[\*\]|^\[\+\]|^\[-\]' | grep -v "Number of requests")
+    echo "$wafw00f_filtrado"
+    md "\n### WAF (wafw00f)\n\n\`\`\`\n${wafw00f_filtrado}\n\`\`\`"
 fi
 	echo -e "\n"
 
@@ -278,15 +412,37 @@ fi
 echo -e "${GREEN}[+] Iniciando fuzzing de directorios${NC}"
 
 umbral_ruido=5
+umbral_rate_limit=10
+threads=80
 tmp_json=$(mktemp)
 
-ffuf -ic -ac -s -w /usr/share/dirb/wordlists/big.txt -t 80 \
-     -u "${protocol}://${target}/FUZZ" \
-     -o "$tmp_json" -of json 2>/dev/null
+ffuf -ic -ac -s -w /usr/share/dirb/wordlists/big.txt -t "$threads" \
+    -u "${protocol}://${target}/FUZZ" \
+    -o "$tmp_json" -of json 2>/dev/null
+
+# --- Comprobación de rate-limiting ---
+rate_limit_hits=$(jq '[.results[] | select(.status == 429 or .status == 503 or .status == 508)] | length' "$tmp_json")
+
+if (( rate_limit_hits > umbral_rate_limit )); then
+    echo -e "${YELLOW}[!] Detectados $rate_limit_hits códigos de rate-limit (429/503/508) con $threads hilos.${NC}"
+    echo -e "${YELLOW}[!] Reduciendo a 20 hilos y relanzando el escaneo...${NC}"
+
+    threads=20
+    rm -f "$tmp_json"
+    tmp_json=$(mktemp)
+
+    ffuf -ic -ac -s -w /usr/share/dirb/wordlists/big.txt -t "$threads" \
+        -u "${protocol}://${target}/FUZZ" \
+        -o "$tmp_json" -of json 2>/dev/null
+
+    rate_limit_hits=$(jq '[.results[] | select(.status == 429 or .status == 503 or .status == 508)] | length' "$tmp_json")
+    echo -e "${YELLOW}[!] Tras reducir hilos: $rate_limit_hits códigos de rate-limit restantes${NC}"
+fi
+
+echo -e "\n"
 
 total_resultados=$(jq '.results | length' "$tmp_json")
 echo "[+] Resultados totales: $total_resultados"
-
 
 tmp_data=$(mktemp)
 jq -r '.results[] | "\(.url)|\(.status)|\(.words)|\(.lines)"' "$tmp_json" > "$tmp_data"
@@ -328,7 +484,7 @@ if (( ${#sospechosos[@]} > 0 )); then
     echo -e "${YELL}[+] ${#sospechosos[@]} resultados con patrón repetido (>${umbral_ruido} veces, mismo status/words/lines). Resolviendo:${NC}"
 
     if [[ "$httpx_disponible" == true ]]; then
-        printf '%s\n' "${sospechosos[@]}" | "$HTTPX_BIN" -silent -sc -title -nc
+        printf '%s\n' "${sospechosos[@]}" | "$HTTPX_BIN" -silent -sc -title
     else
         echo -e "${YELLOW}[!] httpx no disponible, usando fallback con curl (más lento, limitado a 50 URLs)${NC}"
         max_resolver=50
@@ -346,16 +502,27 @@ else
     echo "[+] No se detectaron grupos de ruido repetido"
 fi
 
+md "\n### Fuzzing de directorios\n\n**Resultados totales:** $total_resultados\n\n#### Resultados limpios (${#limpios[@]})\n\n\`\`\`\n$(printf '%s\n' "${limpios[@]}")\n\`\`\`"
+
+if (( ${#sospechosos[@]} > 0 )); then
+    md "\n#### Resultados sospechosos (${#sospechosos[@]}, patrón repetido >${umbral_ruido} veces)\n\nDescartados por comportamiento repetido, no listados individualmente en el reporte."
+else
+    md "\n#### Resultados sospechosos\n\nNo se detectaron grupos de ruido repetido."
+fi
+
 	echo -e "\n"
 
 # Leer Robots.txt si existe
 echo -e "${GREEN}[+] Leyendo Robots.txt (si existe)${NC}"
-curl -s "${protocol}://${target}/robots.txt" \
+robots_output=$(curl -s "${protocol}://${target}/robots.txt" \
   | grep -Ev '^\s*#|^\s*$' \
   | grep -Ei '^(disallow|allow):' \
   | awk -F': ' '{print $2}' \
   | sed '/^$/d' \
-  | sort -u
+  | sort -u)
+
+echo "$robots_output"
+md "\n### robots.txt\n\n\`\`\`\n${robots_output:-(sin rutas relevantes o robots.txt no encontrado)}\n\`\`\`"
 
         echo -e "\n"
 
@@ -404,6 +571,8 @@ for fqdn in "${subs_totales[@]}"; do
     echo "$fqdn"
 done
 
+md "\n### Subdominios\n\n**subfinder:** ${#subs_full[@]} | **crt.sh:** ${#subs_crtsh[@]} | **Total únicos:** ${#subs_totales[@]}\n\n\`\`\`\n$(printf '%s\n' "${subs_totales[@]}")\n\`\`\`"
+
 fi
 
 	echo -e "\n"
@@ -412,11 +581,12 @@ fi
 echo -e "${GREEN}[+] Verificando cuáles subdominios responden (httpx)${NC}"
 
 if [[ "$httpx_disponible" == true ]]; then
-    printf '%s\n' "${subs_totales[@]}" | "$HTTPX_BIN" -silent -sc -title -nc -fc 404
+    live_subs_output=$(printf '%s\n' "${subs_totales[@]}" | "$HTTPX_BIN" -silent -sc -title -fc 404)
 else
     echo -e "${YELLOW}[!] httpx no disponible, usando fallback con curl (más lento, limitado a 50)${NC}"
     max_resolver=50
     count=0
+    live_subs_output=""
     for fqdn in "${subs_totales[@]}"; do
         if (( count >= max_resolver )); then
             echo "[...] Límite de $max_resolver alcanzado, resto omitido"
@@ -425,8 +595,22 @@ else
         resultado=$(resolver_con_curl "${protocol}://${fqdn}")
         # Filtra líneas cuyo código de estado sea 404
         if [[ ! "$resultado" =~ ^\[404\] ]]; then
-            echo "$resultado"
+            live_subs_output+="${resultado}"$'\n'
         fi
         (( count++ ))
     done
+fi
+
+echo "$live_subs_output"
+
+if [[ "$EXPORT" == true ]]; then
+    echo "$live_subs_output" > "$SUBS_FILE"
+fi
+
+md "\n### Subdominios vivos (verificados)\n\nListado completo en \`subdominios_vivos.txt\`.\n\n\`\`\`\n${live_subs_output}\n\`\`\`"
+
+if [[ "$EXPORT" == true ]]; then
+    md "\n---\n\n*Fin del reporte.*"
+    echo -e "\n${GREEN}[+] Reporte guardado en: $REPORT_FILE${NC}"
+    echo -e "${GREEN}[+] Carpeta de resultados: $OUTDIR${NC}"
 fi
