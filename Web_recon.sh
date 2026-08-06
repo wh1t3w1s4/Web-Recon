@@ -197,11 +197,26 @@ consultar_crtsh() {
         espera=$(( espera * 2 ))  # backoff: 3s, 6s, 12s, 24s...
     done
 
-    # Fallback: intentar con CSV si el JSON sigue fallando
+# Fallback: intentar con CSV si el JSON sigue fallando
     echo -e "${YELLOW}[!] JSON falló tras $intentos intentos, probando CSV...${NC}" >&2
     raw=$(curl -s --max-time 30 "https://crt.sh/?q=%25.${domain}&output=csv")
     if [[ -n "$raw" ]]; then
-        echo "$raw" | tail -n +2 | awk -F',' '{print $6}' | sed 's/\*\.//g' | sort -u
+        echo "$raw" | python3 -c "
+import csv, sys
+reader = csv.DictReader(sys.stdin)
+seen = set()
+for row in reader:
+    val = (row.get('name_value') or '').strip()
+    if not val:
+        continue
+    for line in val.split('\n'):
+        line = line.strip()
+        if line.startswith('*.'):
+            line = line[2:]
+        if line and line not in seen:
+            seen.add(line)
+            print(line)
+" | sort -u
         return 0
     fi
 
@@ -285,9 +300,6 @@ consultar_dns_extra() {
     dig CNAME +short "$domain" | grep -v '^\s*$' || echo "  (ninguno, dominio no es alias)"
     echo -e "\n"
 
-    echo -e "${GREEN}[+] AAAA (IPv6)${NC}"
-    dig AAAA +short "$domain" | grep -v '^\s*$' || echo "  (sin registros)"
-    echo -e "\n"
 }
 #--------------------------------------------------------------------------------------------------------------------
 
@@ -408,17 +420,40 @@ if [[ "$wafw00f_disponible" == true ]]; then
 fi
 	echo -e "\n"
 
+
 # Fuzzing de directorios con ffuf (20k rutas)
 echo -e "${GREEN}[+] Iniciando fuzzing de directorios${NC}"
 
 umbral_ruido=5
 umbral_rate_limit=10
 threads=80
+wordlist="/usr/share/dirb/wordlists/big.txt"
 tmp_json=$(mktemp)
 
-ffuf -ic -ac -s -w /usr/share/dirb/wordlists/big.txt -t "$threads" \
-    -u "${protocol}://${target}/FUZZ" \
-    -o "$tmp_json" -of json 2>/dev/null
+ejecutar_ffuf_con_spinner() {
+    local hilos="$1"
+    local salida_json="$2"
+
+    ffuf -ic -ac -s -w "$wordlist" -t "$hilos" \
+        -u "${protocol}://${target}/FUZZ" \
+        -o "$salida_json" -of json &>/dev/null &
+    local pid=$!
+
+    local spinner='|/-\'
+    local i=0
+    local inicio=$SECONDS
+    while kill -0 "$pid" 2>/dev/null; do
+        i=$(( (i+1) % 4 ))
+        local transcurrido=$(( SECONDS - inicio ))
+        printf "\r${YELLOW}[%s] Fuzzing en curso... (%ds)${NC}" "${spinner:$i:1}" "$transcurrido"
+        sleep 0.3
+    done
+    printf "\r%*s\r" 50 ""   # limpia la línea del spinner
+
+    wait "$pid"
+}
+
+ejecutar_ffuf_con_spinner "$threads" "$tmp_json"
 
 # --- Comprobación de rate-limiting ---
 rate_limit_hits=$(jq '[.results[] | select(.status == 429 or .status == 503 or .status == 508)] | length' "$tmp_json")
@@ -431,9 +466,7 @@ if (( rate_limit_hits > umbral_rate_limit )); then
     rm -f "$tmp_json"
     tmp_json=$(mktemp)
 
-    ffuf -ic -ac -s -w /usr/share/dirb/wordlists/big.txt -t "$threads" \
-        -u "${protocol}://${target}/FUZZ" \
-        -o "$tmp_json" -of json 2>/dev/null
+    ejecutar_ffuf_con_spinner "$threads" "$tmp_json"
 
     rate_limit_hits=$(jq '[.results[] | select(.status == 429 or .status == 503 or .status == 508)] | length' "$tmp_json")
     echo -e "${YELLOW}[!] Tras reducir hilos: $rate_limit_hits códigos de rate-limit restantes${NC}"
@@ -444,6 +477,8 @@ echo -e "\n"
 total_resultados=$(jq '.results | length' "$tmp_json")
 echo "[+] Resultados totales: $total_resultados"
 
+
+# Filtrar ruido
 tmp_data=$(mktemp)
 jq -r '.results[] | "\(.url)|\(.status)|\(.words)|\(.lines)"' "$tmp_json" > "$tmp_data"
 rm -f "$tmp_json"
@@ -511,6 +546,7 @@ else
 fi
 
 	echo -e "\n"
+
 
 # Leer Robots.txt si existe
 echo -e "${GREEN}[+] Leyendo Robots.txt (si existe)${NC}"
