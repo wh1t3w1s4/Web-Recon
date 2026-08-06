@@ -1,4 +1,4 @@
-# Web-Recon-v0.1.0-alpha
+# Web-Recon-v0.1.1-alpha
 The web reconnaissance tool by w1s4
 
 **Estado del proyecto: alpha (v0.1.0)** — en fase de pruebas con feedback de terceros. Puede tener bugs, comportamiento inconsistente entre targets, y cambiar bastante entre versiones. No recomendado todavía para uso en entornos críticos sin supervisión.
