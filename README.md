@@ -88,7 +88,7 @@ Ejemplos:
 
 ```bash
 ./web_recon.sh ejemplo.com
-./web_recon.sh -o /home/w1s4/pentest ejemplo.com
+./web_recon.sh -o /home/user/pentest ejemplo.com
 ./web_recon.sh -n ejemplo.com
 ```
 
@@ -238,7 +238,7 @@ https://cpcalendars.domain.com [401]
 
 Por defecto el script usa wordlists locales para fuzzing de directorios y subdominios (ajustables directamente en el script). Revisa las rutas configuradas antes de ejecutar si tu wordlist está en otra ubicación:
 
-- Directorios: `big.txt` (ruta por defecto: `/usr/share/dirb/wordlists/big.txt`, de SecLists)
+- Directorios: `big.txt` (ruta por defecto: `/usr/share/dirb/wordlists/big.txt`, pudiéndose cambiar por la de SecLists)
 - Subdominios (vía subfinder): no requiere wordlist propia, usa fuentes OSINT
 
 ## Pendiente / roadmap
