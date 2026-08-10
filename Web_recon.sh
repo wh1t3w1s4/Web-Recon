@@ -23,7 +23,7 @@ cat << "EOF"
 EOF
 echo -e "${NC}"
 echo -e "${YELLOW}         >> Web Reconnaissance Tool <<${NC}"
-echo -e "${GREEN}         Version 0.1.0 - by w1s4${NC}"
+echo -e "${GREEN}         Version 0.1.1 - by w1s4${NC}"
 echo -e "${CYAN}=========================================================${NC}"
 echo ""
 }
@@ -38,10 +38,11 @@ Opciones:
   -o, --output <ruta>   Carpeta base donde se guardarán los resultados (por defecto: ./resultados)
   -n, --no-export       No crear carpeta ni exportar nada, solo mostrar en pantalla
   -h, --help            Muestra esta ayuda
-
+  -s, --subdomain       Modo subdominio: omite WHOIS, DNS extra y descubrimiento de
+                        subdominios sobre el target indicado.
 Ejemplos:
   $0 ejemplo.com
-  $0 -o /home/w1s4/pentest ejemplo.com
+  $0 -o /home/$USER/pentesting ejemplo.com
   $0 -n ejemplo.com
 EOF
 }
@@ -50,6 +51,7 @@ EOF
 # ------------------------------ ARGUMENTOS --------------------------------
 EXPORT=true
 OUTPUT_BASE="resultados"
+SUBDOMAIN_MODE=false
 target=""
 
 while [[ $# -gt 0 ]]; do
@@ -64,6 +66,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -n|--no-export)
             EXPORT=false
+            shift
+            ;;
+        -s|--subdomain)
+            SUBDOMAIN_MODE=true
             shift
             ;;
         -*)
@@ -113,7 +119,6 @@ fi
 md() {
     [[ "$EXPORT" == true ]] && echo -e "$1" | strip_ansi >> "$REPORT_FILE"
 }
-# ---------------------------------------------------------------------------
 
 banner
 
@@ -124,10 +129,10 @@ else
 fi
 echo -e "\n"
 
-
-# DEFINIR FUNCIONES
-
 #------------------------------------------------------------------------------------------------------------
+
+#--------------------------------- DEFINIR FUNCIONES --------------------------------------------------------
+
 # Función: detectar_protocolo
 # Devuelve "https", "http" o "ninguno" según lo que responda el target
 detectar_protocolo() {
@@ -161,6 +166,7 @@ detectar_protocolo() {
     return 1
 }
 #-------------------------------------------------------------------------------------------------------------
+
 # Función: resolver_con_curl
 # Fallback si no está disponible httpx. Devuelve código HTTP + título.
 resolver_con_curl() {
@@ -176,6 +182,7 @@ resolver_con_curl() {
     echo "[$codigo] $url ${titulo:+- $titulo}"
 }
 #-------------------------------------------------------------------------------------------------------------
+
 # Función: consultar_crtsh
 # Realiza peticiones a https://crt.sh/$domain y lo exporta en JSON
 consultar_crtsh() {
@@ -224,38 +231,7 @@ for row in reader:
     return 1
 }
 #-------------------------------------------------------------------------------------------------------------------
-# Detectar instalación de httpx (projectdiscovery)
-HTTPX_BIN="${HTTPX_BIN:-$HOME/.go/bin/httpx}"
 
-if [[ -x "$HTTPX_BIN" ]]; then
-    httpx_disponible=true
-    echo -e ""
-else
-    httpx_disponible=false
-    echo -e "${YELLOW}[!] httpx de ProjectDiscovery no encontrado en $HTTPX_BIN${NC}"
-    echo -e "${YELLOW}    Instálalo con: go install github.com/projectdiscovery/httpx/cmd/httpx@latest${NC}"
-    echo -e "${YELLOW}    Se usará un fallback con curl para resolver hallazgos repetidos${NC}"
-fi
-
-#--------------------------------------------------------------------------------------------------------------------
-# Detectar instalación de wafw00f
-if ! command -v wafw00f &> /dev/null; then
-    echo -e "${YELLOW}[!] wafw00f no está instalado, se omitirá la detección de WAF${NC}"
-    echo -e "${YELLOW}    Instálalo con: sudo apt install wafw00f${NC}"
-    wafw00f_disponible=false
-else
-    wafw00f_disponible=true
-fi
-#--------------------------------------------------------------------------------------------------------------------
-# Detectar instalación de WP-Scan
-if ! command -v wpscan &> /dev/null; then
-    echo -e "${YELLOW}[!] wpscan no está instalado, se omitirá el análisis de WordPress si se detecta${NC}"
-    echo -e "${YELLOW}    Instálalo con: gem install wpscan${NC}"
-    wpscan_disponible=false
-else
-    wpscan_disponible=true
-fi
-#--------------------------------------------------------------------------------------------------------------------
 # Función: analizar_wordpress
 # Lanza wpscan si whatweb detectó WordPress.
 analizar_wordpress() {
@@ -274,37 +250,201 @@ analizar_wordpress() {
         | grep -Ev 'WPScan DB|WordPress version|The remote website|URL:|Started:|Requests Done|Cached Requests|Data Sent|Data Received|Memory used|Elapsed time'
 }
 #--------------------------------------------------------------------------------------------------------------------
+
+# Función: interpretar_registro
+# Devuelve una anotación legible para un valor de registro DNS, o cadena vacía si no reconoce el patrón.
+interpretar_registro() {
+    local tipo="$1"
+    local valor="$2"
+    local v_lower="${valor,,}"
+
+    case "$tipo" in
+        TXT)
+            [[ "$v_lower" == v=spf1* ]] && { echo "SPF — define qué servidores pueden enviar correo en nombre del dominio"; return; }
+            [[ "$v_lower" == v=dkim1* ]] && { echo "DKIM — firma criptográfica de autenticidad de correo"; return; }
+            [[ "$v_lower" == v=dmarc1* ]] && { echo "DMARC — política de qué hacer si el correo falla SPF/DKIM"; return; }
+            [[ "$v_lower" == google-site-verification=* ]] && { echo "Verificación de propiedad: Google Search Console"; return; }
+            [[ "$v_lower" == ms=* ]] && { echo "Verificación de propiedad: Microsoft 365"; return; }
+            [[ "$v_lower" == facebook-domain-verification=* ]] && { echo "Verificación de propiedad: Facebook Business"; return; }
+            ;;
+        NS)
+            [[ "$v_lower" == *cloudflare.com* ]] && { echo "Cloudflare (probable proxy/CDN delante del origen real)"; return; }
+            [[ "$v_lower" == *awsdns* ]] && { echo "AWS Route 53"; return; }
+            [[ "$v_lower" == *domaincontrol.com* ]] && { echo "GoDaddy"; return; }
+            ;;
+        MX)
+            [[ "$v_lower" == *google.com* || "$v_lower" == *googlemail.com* ]] && { echo "Google Workspace (correo corporativo)"; return; }
+            [[ "$v_lower" == *outlook.com* || "$v_lower" == *protection.outlook.com* ]] && { echo "Microsoft 365"; return; }
+            [[ "$v_lower" == *zoho.com* ]] && { echo "Zoho Mail"; return; }
+            ;;
+        CNAME)
+            [[ "$v_lower" == *herokuapp.com* ]] && { echo "Apunta a Heroku — revisar posible subdomain takeover si el recurso no existe"; return; }
+            [[ "$v_lower" == *github.io* ]] && { echo "Apunta a GitHub Pages — revisar posible subdomain takeover si el recurso no existe"; return; }
+            [[ "$v_lower" == *s3.amazonaws.com* || "$v_lower" == *s3-website* ]] && { echo "Apunta a AWS S3 — revisar posible subdomain takeover si el bucket no existe"; return; }
+            [[ "$v_lower" == *cloudfront.net* ]] && { echo "AWS CloudFront (CDN)"; return; }
+            [[ "$v_lower" == *azurewebsites.net* ]] && { echo "Azure App Service — revisar posible subdomain takeover si el recurso no existe"; return; }
+            ;;
+        CAA)
+            [[ "$v_lower" == *letsencrypt.org* ]] && { echo "Autoriza a Let's Encrypt a emitir certificados"; return; }
+            [[ "$v_lower" == *digicert.com* ]] && { echo "Autoriza a DigiCert a emitir certificados"; return; }
+            [[ "$v_lower" == *sectigo.com* || "$v_lower" == *comodoca.com* ]] && { echo "Autoriza a Sectigo/Comodo a emitir certificados"; return; }
+            ;;
+    esac
+    echo ""
+}
+#--------------------------------------------------------------------------------------------------------------------
+
 # Función: consultar_dns_extra
 # Registros MX, TXT, NS, SOA, CNAME, AAAA con +short.
 # Filtra líneas vacías y limpia comillas en TXT.
 consultar_dns_extra() {
     local domain="$1"
 
-    echo -e "${GREEN}[+] MX (correo)${NC}"
-    dig MX +short "$domain" | grep -v '^\s*$' || echo "  (sin registros)"
-    echo -e "\n"
+    for tipo in MX NS TXT SOA CNAME CAA; do
+        echo -e "${GREEN}[+] ${tipo}${NC}"
+        local resultado
+        resultado=$(dig "$tipo" +short "$domain" | grep -v '^\s*$')
 
-    echo -e "${GREEN}[+] NS (servidores de nombres)${NC}"
-    dig NS +short "$domain" | grep -v '^\s*$' || echo "  (sin registros)"
-    echo -e "\n"
-
-    echo -e "${GREEN}[+] TXT${NC}"
-    dig TXT +short "$domain" | grep -v '^\s*$' | tr -d '"' || echo "  (sin registros)"
-    echo -e "\n"
-
-    echo -e "${GREEN}[+] SOA${NC}"
-    dig SOA +short "$domain" | grep -v '^\s*$' || echo "  (sin registros)"
-    echo -e "\n"
-
-    echo -e "${GREEN}[+] CNAME${NC}"
-    dig CNAME +short "$domain" | grep -v '^\s*$' || echo "  (ninguno, dominio no es alias)"
-    echo -e "\n"
-
+        if [[ -z "$resultado" ]]; then
+            echo "  (sin registros)"
+        else
+            while IFS= read -r linea; do
+                [[ "$tipo" == "TXT" ]] && linea=$(echo "$linea" | tr -d '"')
+                local nota
+                nota=$(interpretar_registro "$tipo" "$linea")
+                if [[ -n "$nota" ]]; then
+                    echo "  $linea"
+                    echo "    → $nota"
+                else
+                    echo "  $linea"
+                fi
+            done <<< "$resultado"
+        fi
+        echo -e "\n"
+    done
 }
 #--------------------------------------------------------------------------------------------------------------------
 
+# Función: extraer_versiones_whatweb
+# Estrae los dígitos de las tecnologías detectadas por whatweb
+extraer_versiones_whatweb() {
+    local output="$1"
+    local plugin=""
+    local re_plugin='^\[ (.+) \]$'
+    local re_version='Version[[:space:]]*:[[:space:]]*([^[:space:](]+)'
 
-#FASE 1: Recon pasivo
+    while IFS= read -r line; do
+        if [[ "$line" =~ $re_plugin ]]; then
+            plugin="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ $re_version ]]; then
+            if [[ -n "$plugin" ]]; then
+                echo "${plugin}|${BASH_REMATCH[1]}"
+            fi
+        fi
+    done <<< "$output"
+}
+#--------------------------------------------------------------------------------------------------------------------
+
+# Función: version_lt
+# Devuelve 0 (true) si $1 < $2, usando comparación semántica (sort -V)
+version_lt() {
+    [[ "$1" == "$2" ]] && return 1
+    [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
+}
+#--------------------------------------------------------------------------------------------------------------------
+
+# Base de datos de vulnerabilidades conocidas por versión.
+# "vulnerable si version < versión_máxima" (y coincide la rama, si se especifica)
+VULN_DB=(
+    "jQuery|3.5.0||CVE-2020-11022,CVE-2020-11023|XSS al pasar HTML no confiable a métodos como .html()/.append()|https://nvd.nist.gov/vuln/detail/CVE-2020-11022"
+    "jQuery|1.9.0||CVE-2015-9251|XSS en respuestas Ajax con Content-Type incorrecto|https://nvd.nist.gov/vuln/detail/CVE-2015-9251"
+    "Bootstrap|3.4.1|3.|CVE-2018-14040,CVE-2018-14041,CVE-2018-14042|XSS en plugins tooltip/affix/collapse (rama 3.x)|https://nvd.nist.gov/vuln/detail/CVE-2018-14042"
+    "Bootstrap|4.3.1|4.|CVE-2019-8331|XSS en tooltip/popover vía atributo data-template (rama 4.x)|https://nvd.nist.gov/vuln/detail/CVE-2019-8331"
+    "nginx|1.20.1||CVE-2021-23017|Desbordamiento de búfer en el resolver DNS interno|https://nvd.nist.gov/vuln/detail/CVE-2021-23017"
+    "Apache|2.4.51||CVE-2021-41773,CVE-2021-42013|Path traversal / RCE en mod_cgi (versiones 2.4.49-2.4.50)|https://nvd.nist.gov/vuln/detail/CVE-2021-42013"
+    "Lodash|4.17.21||CVE-2020-8203,CVE-2019-10744|Prototype Pollution|https://nvd.nist.gov/vuln/detail/CVE-2020-8203"
+    "OpenSSL|1.0.1g||CVE-2014-0160|Heartbleed — fuga de memoria del proceso|https://nvd.nist.gov/vuln/detail/CVE-2014-0160"
+    "PHP|5.6.40||CVE-2019-11043|RCE en php-fpm bajo nginx con rutas concretas|https://nvd.nist.gov/vuln/detail/CVE-2019-11043"
+)
+#--------------------------------------------------------------------------------------------------------------------
+
+# Función: detectar_vulnerabilidades_version
+# Cruza las versiones detectadas por whatweb contra VULN_DB.
+detectar_vulnerabilidades_version() {
+    local whatweb_out="$1"
+    local encontradas=()
+
+    while IFS='|' read -r plugin version; do
+        [[ -z "$plugin" || -z "$version" ]] && continue
+        version="${version%%[^0-9.]*}"
+        [[ -z "$version" ]] && continue
+
+        for entry in "${VULN_DB[@]}"; do
+            IFS='|' read -r db_tech db_max db_rama db_cve db_desc db_ref <<< "$entry"
+
+            [[ "${plugin,,}" != "${db_tech,,}" ]] && continue
+            [[ -n "$db_rama" && "$version" != "$db_rama"* ]] && continue
+
+            if version_lt "$version" "$db_max"; then
+                encontradas+=("[!] ${plugin} ${version} — vulnerable (< ${db_max})
+    CVE: ${db_cve}
+    ${db_desc}
+    Ref: ${db_ref}")
+            fi
+        done
+    done < <(extraer_versiones_whatweb "$whatweb_out")
+
+    if (( ${#encontradas[@]} > 0 )); then
+        printf '%s\n\n' "${encontradas[@]}"
+        return 0
+    fi
+    return 1
+}
+#-------------------------------------------------------------------------------------------------------------------
+
+#--------------------------------- DETECTAR INSTALACIÓN DE HERRAMIENTAS --------------------------------------------
+
+# Detectar instalación de httpx (projectdiscovery)
+
+HTTPX_BIN="${HTTPX_BIN:-$HOME/.go/bin/httpx}"
+
+if [[ -x "$HTTPX_BIN" ]]; then
+    httpx_disponible=true
+    echo -e ""
+else
+    httpx_disponible=false
+    echo -e "${YELLOW}[!] httpx de ProjectDiscovery no encontrado en $HTTPX_BIN${NC}"
+    echo -e "${YELLOW}    Instálalo con: go install github.com/projectdiscovery/httpx/cmd/httpx@latest${NC}"
+    echo -e "${YELLOW}    Se usará un fallback con curl para resolver hallazgos repetidos${NC}"
+fi
+
+#--------------------------------------------------------------------------------------------------------------------
+
+# Detectar instalación de wafw00f
+if ! command -v wafw00f &> /dev/null; then
+    echo -e "${YELLOW}[!] wafw00f no está instalado, se omitirá la detección de WAF${NC}"
+    echo -e "${YELLOW}    Instálalo con: sudo apt install wafw00f${NC}"
+    wafw00f_disponible=false
+else
+    wafw00f_disponible=true
+fi
+#--------------------------------------------------------------------------------------------------------------------
+
+# Detectar instalación de WP-Scan
+if ! command -v wpscan &> /dev/null; then
+    echo -e "${YELLOW}[!] wpscan no está instalado, se omitirá el análisis de WordPress si se detecta${NC}"
+    echo -e "${YELLOW}    Instálalo con: gem install wpscan${NC}"
+    wpscan_disponible=false
+else
+    wpscan_disponible=true
+fi
+
+#--------------------------------------------------------------------------------------------------------------------
+
+
+
+#------------------------------------ FASE 1: Recon pasivo ----------------------------------------------------------
+
 echo -e "${BIG}[+] Iniciando reconocimiento web para: $target${NC}"
 echo "Fecha: $(date)"
 
@@ -315,6 +455,8 @@ echo -e "${YELLOW}[+] Iniciando reconocimiento pasivo para: $target${NC}"
 
         echo -e "\n"
 
+
+if [[ "$SUBDOMAIN_MODE" == false ]]; then
 
 echo -e "${GREEN}[+] Iniciando reconocimiento WHOIS${NC}"
 whois_output=$(whois "$target" | head -n 20)
@@ -328,6 +470,8 @@ dns_extra_output=$(consultar_dns_extra "$target")
 echo "$dns_extra_output"
 md "\n### Registros DNS adicionales\n\n\`\`\`\n$(echo "$dns_extra_output" | strip_ansi)\n\`\`\`"
 	echo -e "\n"
+
+fi
 
 echo -e "${GREEN}[+] Iniciando reconocimiento IP${NC}"
 
@@ -354,8 +498,7 @@ echo -e "\n"
 
 
 
-
-#FASE 2: Recon activo
+#------------------------------------ FASE 2: Recon activo ----------------------------------------------------------
 echo -e "${YELLOW}[+] Iniciando reconocimiento activo para: $target${NC}"
         echo -e "\n"
         echo -e "\n"
@@ -380,7 +523,7 @@ md "\n## Fase 2 — Reconocimiento activo\n\n**Protocolo detectado:** $protocol"
 echo -e "${GREEN}[+] Iniciando reconocimiento con Whatweb${NC}"
 whatweb_output=$(whatweb -v "${protocol}://${target}" 2>/dev/null)
 
-if echo "$whatweb_output" | grep -qi "cloudflare" && echo "$whatweb_output" | grep -Eqi "403 Forbidden|Just a moment"; then
+if echo "$whatweb_output" | grep -qi "cloudflare" && echo "$whatweb_output" | grep -Eqi "403 Forbidden|Just a moment|"; then
     echo -e "${YELLOW}[-] Cloudflare detectado, omitiendo este paso${NC}"
     md "\n### WhatWeb\n\nCloudflare detectado (403/challenge) — salida omitida."
 else
@@ -388,6 +531,21 @@ else
     echo "$whatweb_output"
     echo "-----------------------------FINAL WHATWEB----------------------------------------"
     md "\n### WhatWeb\n\n\`\`\`\n${whatweb_output}\n\`\`\`"
+fi
+	echo -e "\n"
+
+
+# Comprobación de versiones vulnerables conocidas
+echo -e "${GREEN}[+] Comprobando vulnerabilidades conocidas por versión${NC}"
+whatweb_clean=$(echo "$whatweb_output" | strip_ansi)
+vulns_encontradas=$(detectar_vulnerabilidades_version "$whatweb_clean")
+
+if [[ -n "$vulns_encontradas" ]]; then
+    echo -e "${YELLOW}$vulns_encontradas${NC}"
+    md "\n### Vulnerabilidades conocidas por versión\n\n\`\`\`\n${vulns_encontradas}\n\`\`\`"
+else
+    echo "[-] No se detectaron versiones con vulnerabilidades conocidas en la base de datos local"
+    md "\n### Vulnerabilidades conocidas por versión\n\nNo se detectaron coincidencias en la base de datos local."
 fi
 	echo -e "\n"
 
@@ -412,7 +570,7 @@ fi
 
 # Llamada a wafw00f
 if [[ "$wafw00f_disponible" == true ]]; then
-    echo -e "${GREEN}[+] Comprobando WAF (wafw00f)${NC}"
+    echo -e "${GREEN}[+] Comprobando WAF${NC}"
     wafw00f_output=$(wafw00f "${protocol}://${target}" 2>/dev/null)
     wafw00f_filtrado=$(echo "$wafw00f_output" | grep -E '^\[\*\]|^\[\+\]|^\[-\]' | grep -v "Number of requests")
     echo "$wafw00f_filtrado"
@@ -568,6 +726,8 @@ echo -e "${YELL}[+] Iniciando descubrimiento de subdominios${NC}"
         echo -e "\n"
 
 
+if [[ "$SUBDOMAIN_MODE" == false ]]; then
+
 # Paso 1: subfinder
 echo -e "${GREEN}[+] Paso 1: subfinder${NC}"
 
@@ -609,7 +769,6 @@ done
 
 md "\n### Subdominios\n\n**subfinder:** ${#subs_full[@]} | **crt.sh:** ${#subs_crtsh[@]} | **Total únicos:** ${#subs_totales[@]}\n\n\`\`\`\n$(printf '%s\n' "${subs_totales[@]}")\n\`\`\`"
 
-fi
 
 	echo -e "\n"
 
@@ -645,8 +804,11 @@ fi
 
 md "\n### Subdominios vivos (verificados)\n\nListado completo en \`subdominios_vivos.txt\`.\n\n\`\`\`\n${live_subs_output}\n\`\`\`"
 
+fi
+
 if [[ "$EXPORT" == true ]]; then
     md "\n---\n\n*Fin del reporte.*"
     echo -e "\n${GREEN}[+] Reporte guardado en: $REPORT_FILE${NC}"
     echo -e "${GREEN}[+] Carpeta de resultados: $OUTDIR${NC}"
+fi
 fi
