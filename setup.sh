@@ -118,35 +118,27 @@ fi
 echo -e "\n"
 
 # ============================================================
-# 6. Wordlist: SecLists
+# 6. Wordlist: big.txt (vía dirb)
 # ============================================================
-echo -e "${GREEN}[+] Comprobando SecLists (wordlist big.txt)${NC}"
+echo -e "${GREEN}[+] Comprobando wordlist big.txt${NC}"
 
-SECLISTS_PATHS=("/usr/share/seclists" "/usr/bin/seclists")
-BIG_TXT=""
+BIG_TXT="/usr/share/dirb/wordlists/big.txt"
 
-for path in "${SECLISTS_PATHS[@]}"; do
-    if [[ -f "$path/Discovery/Web-Content/big.txt" ]]; then
-        BIG_TXT="$path/Discovery/Web-Content/big.txt"
-        break
-    fi
-done
-
-if [[ -n "$BIG_TXT" ]]; then
-    echo -e "[+] SecLists ya encontrado en: $BIG_TXT"
+if [[ -f "$BIG_TXT" ]]; then
+    echo -e "[+] Wordlist ya encontrada en: $BIG_TXT"
 else
-    echo -e "${YELLOW}[!] SecLists no encontrado, clonando en /usr/share/seclists (puede tardar)${NC}"
-    sudo git clone --depth 1 https://github.com/danielmiessler/SecLists.git /usr/share/seclists
-    BIG_TXT="/usr/share/seclists/Discovery/Web-Content/big.txt"
+    echo -e "${YELLOW}[!] Wordlist no encontrada, instalando paquete dirb${NC}"
+    sudo apt install -y dirb
 fi
 
 if [[ -f "$BIG_TXT" ]]; then
     echo -e "${GREEN}[+] Wordlist lista en: $BIG_TXT${NC}"
-    echo -e "${YELLOW}[!] Verifica que web_recon.sh apunte a esta ruta exacta${NC}"
 else
-    echo -e "${RED}[-] No se pudo confirmar la wordlist tras la instalación, revisa manualmente${NC}"
+    echo -e "${RED}[-] No se pudo confirmar la wordlist tras instalar dirb, revisa manualmente${NC}"
 fi
 
+echo -e "${YELLOW}[!] Nota: SecLists (github.com/danielmiessler/SecLists) también incluye esta y otras wordlists,${NC}"
+echo -e "${YELLOW}    con un catálogo mucho más amplio, si en el futuro quieres wordlists más grandes/específicas.${NC}"
 echo -e "\n"
 
 # ============================================================
