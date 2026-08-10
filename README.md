@@ -1,27 +1,28 @@
 # Web-Recon-v0.1.1-alpha
 The web reconnaissance tool by w1s4
 
-**Estado del proyecto: alpha (v0.1.0)** — en fase de pruebas con feedback de terceros. Puede tener bugs, comportamiento inconsistente entre targets, y cambiar bastante entre versiones. No recomendado todavía para uso en entornos críticos sin supervisión.
+**Estado del proyecto: alpha (v0.1.1)** — en fase de pruebas con feedback de terceros. Puede tener bugs, comportamiento inconsistente entre targets, y cambiar bastante entre versiones. No recomendado todavía para uso en entornos críticos sin supervisión.
 
-Web-Recon es un script en bash para automatizar la fase de reconocimiento (pasivo y activo) sobre un dominio objetivo. Encadena varias herramientas estándar de recon y aplica algo de lógica propia para reducir ruido en los resultados (filtrado de falsos positivos en fuzzing, detección de wildcard, agrupación de patrones repetidos, etc.).
+Web-Recon es un script en bash para automatizar la fase de reconocimiento (pasivo y activo) sobre un dominio objetivo. Encadena varias herramientas estándar de recon y aplica algo de lógica propia para reducir ruido en los resultados (filtrado de falsos positivos en fuzzing, detección de wildcard, agrupación de patrones repetidos, detección de versiones vulnerables conocidas, etc.).
 
 Esta herramienta está pensada únicamente para uso en auditorías, CTFs, bug bounty o programas de pentesting donde se cuenta con autorización explícita sobre el objetivo.
 
 ## Qué hace
 
-El script se divide en dos fases:
+El script se divide en dos fases. En modo normal se ejecutan ambas; en modo subdominio (`-s`) solo se ejecuta la parte de la Fase 2 que tiene sentido sobre un host concreto (ver más abajo).
 
 ### Fase 1 — Reconocimiento pasivo
 
 - **WHOIS**: información de registro del dominio.
 - **Resolución DNS**: registros A vía `dig`, limitado a las primeras IPs resueltas.
-- **Registros DNS adicionales**: MX, NS, TXT, SOA y CNAME.
+- **Registros DNS adicionales**: MX, NS, TXT, SOA, CNAME y CAA, con un intérprete que anota automáticamente patrones conocidos (SPF/DKIM/DMARC en TXT, proveedores de correo y DNS habituales, posibles candidatos a subdomain takeover en CNAME, autoridades de certificación en CAA, etc.).
 - **IP info**: script propio de geolocalización aproximada y datos de cada IP resuelta (ISP, ASN, DNS inverso).
 
 ### Fase 2 — Reconocimiento activo
 
 - **Detección de protocolo**: comprueba si el objetivo responde por HTTP, HTTPS o ninguno de los dos, antes de lanzar el resto de módulos.
 - **Fingerprinting web**: `whatweb` en modo verbose. Si detecta un bloqueo de Cloudflare (403 + challenge), omite la salida completa y avisa en su lugar.
+- **Detección de vulnerabilidades conocidas por versión**: cruza las tecnologías y versiones detectadas por `whatweb` contra una base de datos local de CVEs comprobables (jQuery, Bootstrap, nginx, Apache, OpenSSL, PHP, etc.), reportando coincidencias con su CVE y referencia.
 - **Detección de WordPress**: si `whatweb` detecta el CMS, lanza `wpscan` automáticamente en busca de plugins/temas vulnerables y usuarios.
 - **WAF detection**: `wafw00f` para identificar si hay un WAF delante del objetivo.
 - **Fuzzing de directorios**: `ffuf` contra el objetivo, con:
@@ -29,12 +30,21 @@ El script se divide en dos fases:
   - Reducción automática de hilos (de 80 a 20) si se detecta rate-limiting (códigos 429/503/508).
   - Agrupación de resultados por status/words/lines para detectar patrones repetidos (falsos positivos).
   - Resultados "limpios" mostrados directamente; resultados "sospechosos" (patrón repetido) resueltos con `httpx` o `curl` como fallback.
+  - Indicador de actividad en pantalla mientras el escaneo está en curso.
 - **robots.txt**: extracción de rutas `Disallow`/`Allow`, filtrando comentarios y líneas irrelevantes.
-- **Descubrimiento de subdominios**:
+- **Descubrimiento de subdominios** *(solo en modo normal, omitido con `-s`)*:
   - `subfinder` como fuente principal.
-  - `crt.sh` (Certificate Transparency) como fuente complementaria, con reintentos y backoff si el servicio da rate-limit, lo cual es común al realizarle peticiones desde curl.
+  - `crt.sh` (Certificate Transparency) como fuente complementaria, con reintentos, backoff y parseo robusto de CSV/JSON, con reintentos y backoff si el servicio da rate-limit, lo cual es común al realizarle peticiones desde curl.
   - Unión y deduplicación de ambas fuentes.
   - Verificación de cuáles subdominios responden realmente, filtrando 404s.
+
+## Modo subdominio (`-s`)
+
+Pensado para cuando el objetivo ya es un subdominio conocido (por ejemplo, tras descubrirlo en un escaneo anterior) y no tiene sentido repetir WHOIS, registros DNS del dominio raíz, ni volver a buscar subdominios de un subdominio.
+
+Con `-s` se omiten: WHOIS, registros DNS adicionales, y todo el bloque de descubrimiento de subdominios (subfinder/crt.sh/verificación de vivos).
+
+Se mantienen: IP + geolocalización, detección de protocolo, whatweb, detección de vulnerabilidades por versión, WordPress/wpscan, wafw00f, fuzzing de directorios y robots.txt.
 
 ## Requisitos del sistema
 
@@ -42,7 +52,7 @@ Probado en **Debian/Ubuntu**. No hay soporte todavía para Arch, Fedora o macOS 
 
 ## Instalación / Dependencias
 
-La forma recomendada es usar el script de instalación incluido, que resuelve todas las dependencias automáticamente (paquetes de sistema, herramientas Go, wafw00f, wpscan, la wordlist de SecLists e `ipinfo`):
+La forma recomendada es usar el script de instalación incluido, que resuelve todas las dependencias automáticamente (paquetes de sistema, herramientas Go, wafw00f, wpscan, la wordlist de fuzzing e `ipinfo`):
 
 ```bash
 git clone https://github.com/wh1t3w1s4/Web-Recon
@@ -61,12 +71,14 @@ Si prefieres instalar todo a mano, consulta la tabla de dependencias a continuac
 | `dig` | Fase 1 | `apt install dnsutils` |
 | `curl` | Todas las fases | `apt install curl` |
 | `jq` | Parseo de JSON (ffuf, crt.sh) | `apt install jq` |
+| `python3` | Parseo robusto de CSV (fallback de crt.sh) | `apt install python3` |
 | `whatweb` | Fase 2 | `apt install whatweb` |
 | `wafw00f` | Fase 2 | `pip install wafw00f` |
 | `wpscan` | Fase 2 (si detecta WordPress) | `gem install wpscan` |
 | `ffuf` | Fase 2 | `go install github.com/ffuf/ffuf/v2@latest` |
 | `subfinder` | Fase 2 | `go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest` |
 | `httpx` (ProjectDiscovery) | Fase 2 | `go install github.com/projectdiscovery/httpx/cmd/httpx@latest` |
+| `dirb` | Wordlist de fuzzing (`big.txt`) | `apt install dirb` |
 
 Si falta alguna dependencia, el script avisa al inicio e indica el comando de instalación. Las fases que dependen de una herramienta ausente se omiten o caen a un fallback (por ejemplo, `curl` en lugar de `httpx`) en vez de interrumpir la ejecución completa.
 
@@ -82,6 +94,7 @@ Si falta alguna dependencia, el script avisa al inicio e indica el comando de in
 |---|---|
 | `-o, --output <ruta>` | Carpeta base donde se guardarán los resultados (por defecto: `./resultados`) |
 | `-n, --no-export` | No crea carpeta ni exporta nada, solo muestra en pantalla |
+| `-s, --subdomain` | Modo subdominio: omite WHOIS, DNS extra y descubrimiento de subdominios |
 | `-h, --help` | Muestra la ayuda de uso |
 
 Ejemplos:
@@ -90,162 +103,48 @@ Ejemplos:
 ./web_recon.sh ejemplo.com
 ./web_recon.sh -o /home/user/pentest ejemplo.com
 ./web_recon.sh -n ejemplo.com
+./web_recon.sh -s admin.ejemplo.com
 ```
 
 Si el dominio no responde por HTTP ni HTTPS, la Fase 2 se omite automáticamente, el script informa del motivo y se finaliza la ejecución.
 
 ## Resultados exportados
 
-Salvo que uses `-n`, cada ejecución crea una carpeta `<ruta_base>/<dominio>_<timestamp>/` con:
+Salvo que uses `-n`, cada ejecución crea una carpeta `<ruta_base>/<target>_<timestamp>/` con:
 
 - **`reporte_final.md`** — resumen completo del escaneo en Markdown, con jerarquía por fase y módulo.
-- **`subdominios_vivos.txt`** — subdominios que respondieron correctamente, tras verificación con `httpx`.
+- **`subdominios_vivos.txt`** — subdominios que respondieron correctamente, tras verificación con `httpx` (no se genera en modo `-s`).
 - **`wordpress.txt`** — solo se genera si se detecta WordPress y `wpscan` reporta hallazgos.
 
 ### Ejemplo de salida completa
 
 ```
- __        __   _      ____                       
- \ \      / /__| |__  |  _ \ ___  ___ ___  _ __    
-  \ \ /\ / / _ \ '_ \ | |_) / _ \/ __/ _ \| '_ \   
-   \ V  V /  __/ '_ \ | |  / __/  __\ (_) | | | |  
-    \_/\_/ \___|_.__/_|_| \_\___|\___\___/|_| |_|  
-
-         >> Web Reconnaissance Tool <<
-         Version 0.1.0 - by w1s4
-=========================================================
-
-
-[+] Iniciando reconocimiento web para: domain.com
-Fecha: sáb 25 jul 2026 23:07:00 CEST
-
-
-[+] Iniciando reconocimiento pasivo para: domain.com
-
-
-[+] Iniciando reconocimiento WHOIS
-   Domain Name: DOMAIN.COM
-   Registry Domain ID: 2726597102_DOMAIN_COM-VRSN
-   Registrar WHOIS Server: whois.registrar.eu
-   Registrar URL: http://www.openprovider.com
-   Updated Date: 2025-09-19T07:49:07Z
-   Creation Date: 2022-09-20T16:52:01Z
-   Registry Expiry Date: 2026-09-20T16:52:01Z
-   Registrar: Hosting Concepts B.V. d/b/a Registrar.eu
-   Registrar IANA ID: 1647
-   Registrar Abuse Contact Email: abuse@registrar.eu
-   Registrar Abuse Contact Phone: +31.1234567
-   Domain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited
-   Name Server: EUROCORREO.EMPRESAWWW.COM
-   Name Server: EUROCORREO2.EMPRESAWWW.COM
-   DNSSEC: unsigned
-   URL of the ICANN Whois Inaccuracy Complaint Form: https://www.icann.org/wicf/
->>> Last update of whois database: 2026-07-25T21:06:39Z <<<
-
-
-[+] Iniciando reconocimiento IP
-IPs encontradas: 1
-82.223.XXX.123
-
-──────────────────────────────────────────────────
-  Análisis de 82.223.XXX.123
-──────────────────────────────────────────────────
-  Versión               IPv4
-  Tipo                  Pública
-  Visibilidad           Enrutable en Internet
-  DNS inverso           svr2k8-1.portaldetuciudad.es
-  País                  Spain
-  Región / Ciudad       Madrid / Madrid
-  ISP                   arsys.es
-  Organización          
-  ASN                   AS8560 IONOS SE
-  Hosting / Datacenter  Sí
-
-  ✔  IP pública directa sin CDN conocida
-
-
-[+] Iniciando reconocimiento activo para: domain.com
-
-
-[+] Detectando protocolo (HTTP/HTTPS)
-Protocolo detectado -> https
-
-
-[+] Iniciando reconocimiento con Whatweb
------------------------------INICIO WHATWEB--------------------------------------
-WhatWeb report for https://domain.com
-Status    : 200 OK
-Title     : coches eléctricos SA - domain.com
-IP        : 82.223.132.123
-Country   : SPAIN, ES
-
-Summary   : ASP_NET[4.0.30319], Bootstrap[3.3.7], Cookies[ASP.NET_SessionId],
-HTML5, HTTPServer[Microsoft-IIS/8.0], HttpOnly[ASP.NET_SessionId], JQuery,
-Meta-Author[Portaldetuciudad.com], Microsoft-IIS[8.0],
-Open-Graph-Protocol[website], X-Powered-By[ASP.NET]
------------------------------FINAL WHATWEB----------------------------------------
-
-
-[+] Comprobando WAF (wafw00f)
-[*] Checking https://domain.com
-[+] The site https://domain.com is behind ASP.NET Generic (Microsoft) WAF.
-
-
-[+] Iniciando fuzzing de directorios
-[+] Resultados totales: 10
-
-[+] Resultados únicos (patrón no repetido):
-https://domain.com/Log
-https://domain.com/Resources
-https://domain.com/app_themes
-https://domain.com/favicon.ico
-https://domain.com/log
-https://domain.com/paginas
-https://domain.com/res
-https://domain.com/resources
-https://domain.com/sitemap.xml
-https://domain.com/sitemap_xml
-[+] No se detectaron grupos de ruido repetido
-
-
-[+] Leyendo Robots.txt (si existe)
-
-
-[+] Iniciando descubrimiento de subdominios
-
-[+] Paso 1: subfinder
-[+] Subdominios encontrados por subfinder: 7
-
-[+] Paso 2: crt.sh
-[+] crt.sh: 8 entradas encontradas
-
-[+] Resumen final de subdominios (subfinder + crt.sh)
-[+] Total únicos combinados: 8
-
-
-[+] Verificando cuáles subdominios responden (httpx)
-https://mail.domain.com [301] [301 Moved Permanently]
-https://webdisk.domain.com [401]
-https://webmail.domain.com [200] [Nombre de usuario para el webmail]
-https://cpanel.domain.com [200] [Acceso a cPanel]
-https://www.domain.com [301] [Document Moved]
-https://domain.com [200] [coches eléctricos SA - domain.com]
-https://cpcontacts.domain.com [401]
-https://cpcalendars.domain.com [401]
+[ Pega aquí un escaneo de ejemplo actualizado, con el dominio real anonimizado,
+  que refleje ya el bloque de vulnerabilidades por versión y el intérprete de DNS ]
 ```
 
 ## Wordlists
 
 Por defecto el script usa wordlists locales para fuzzing de directorios y subdominios (ajustables directamente en el script). Revisa las rutas configuradas antes de ejecutar si tu wordlist está en otra ubicación:
 
-- Directorios: `big.txt` (ruta por defecto: `/usr/share/dirb/wordlists/big.txt`, pudiéndose cambiar por la de SecLists)
+- Directorios: `big.txt` (ruta por defecto: `/usr/share/dirb/wordlists/big.txt`, instalada vía el paquete `dirb`). También existe en [SecLists](https://github.com/danielmiessler/SecLists), con un catálogo más amplio, si prefieres cambiar la ruta manualmente.
 - Subdominios (vía subfinder): no requiere wordlist propia, usa fuentes OSINT
+
+## Vulnerabilidades conocidas por versión
+
+El script incluye una pequeña base de datos local (editable directamente en el script, variable `VULN_DB`) que compara las versiones detectadas por `whatweb` contra rangos de versiones con CVEs documentados. Es una comprobación determinista (versión detectada < versión con fix conocido → aviso), no un escáner de vulnerabilidades completo.
+
+Limitaciones a tener en cuenta:
+- Un backport de seguridad (parche aplicado sin cambiar el número de versión reportado) puede generar un falso positivo.
+- Solo cubre las tecnologías añadidas manualmente a `VULN_DB` — no es una base de datos exhaustiva ni se actualiza automáticamente.
+- Un WAF u otra mitigación externa puede impedir la explotación real aunque la versión coincida.
 
 ## Pendiente / roadmap
 
 - Mejorar la fiabilidad de la detección/análisis de WordPress (actualmente inconsistente).
 - Screenshots de subdominios/directorios vivos.
 - Listado detallado de los resultados "sospechosos" del fuzzing en el reporte (actualmente solo se indica el conteo).
+- Ampliar la base de datos de vulnerabilidades por versión (`VULN_DB`).
 
 ## Feedback y reporte de bugs
 
