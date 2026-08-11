@@ -84,6 +84,8 @@ Si falta alguna dependencia, el script avisa al inicio e indica el comando de in
 
 > Nota: `httpx` de ProjectDiscovery puede entrar en conflicto con el paquete de Python del mismo nombre (`pip install httpx`, un cliente HTTP). El script referencia el binario por ruta absoluta (`$HOME/.go/bin/httpx` por defecto) para evitar ambigüedad. Si lo tienes en otra ubicación, puedes indicarlo con la variable de entorno `HTTPX_BIN`.
 
+> Si deseas meter el script en el PATH para su llamada relativa tan solo ejecuta `sudo mv web_recon.sh /usr/local/bin/`, habiéndote asegurado de que esa ruta se contempla en tu PATH con `echo $PATH`
+
 ## Uso
 
 ```bash
