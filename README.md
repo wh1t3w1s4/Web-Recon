@@ -164,7 +164,7 @@ Esta herramienta está pensada para usarse únicamente contra objetivos sobre lo
 
 ## Licencia
 
-Este proyecto está licenciado bajo **Creative Commons Atribución-NoComercial-CompartirIgual 4.0 Internacional (CC BY-NC-SA 4.0)**.
+Este proyecto está licenciado bajo **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)**.
 
 En resumen:
 - Puedes usar, modificar y redistribuir el código libremente.
