@@ -68,6 +68,9 @@ else
     sudo gem install wpscan
 fi
 
+echo -e "${GREEN}[+] Actualizando base de datos de wpscan${NC}"
+wpscan --update 2>/dev/null || echo -e "${YELLOW}[!] No se pudo actualizar la BD de wpscan, hazlo manualmente con: wpscan --update${NC}"
+
 echo -e "\n"
 
 # ============================================================
