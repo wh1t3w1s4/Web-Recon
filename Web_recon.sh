@@ -4,9 +4,10 @@
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m'
 YELL='\033[0;33m'
-BIG='\033[1;32m'
+GREEN_BOLD='\033[1;32m'
+RED='\033[1;31m'
+NC='\033[0m'
 
 WPSCAN_API_TOKEN="${WPSCAN_API_TOKEN:-}"
 
@@ -23,7 +24,7 @@ cat << "EOF"
 EOF
 echo -e "${NC}"
 echo -e "${YELLOW}         >> Web Reconnaissance Tool <<${NC}"
-echo -e "${GREEN}         Version 0.1.1 - by w1s4${NC}"
+echo -e "${GREEN}            Version 0.1.1 - by w1s4${NC}"
 echo -e "${CYAN}=========================================================${NC}"
 echo ""
 }
@@ -133,6 +134,16 @@ echo -e "\n"
 
 #--------------------------------- DEFINIR FUNCIONES --------------------------------------------------------
 
+# Kill switch: Ctrl+K finaliza la ejecución en cualquier momento
+if [[ -t 0 ]]; then
+    ORIG_STTY=$(stty -g)
+    stty quit ^K
+    trap 'stty "$ORIG_STTY" 2>/dev/null' EXIT
+fi
+
+trap 'echo -e "\n${RED}[!] Kill switch (Ctrl+K) activado, finalizando ejecución...${NC}"; exit 130' QUIT
+#------------------------------------------------------------------------------------------------------------
+
 # Función: detectar_protocolo
 # Devuelve "https", "http" o "ninguno" según lo que responda el target
 detectar_protocolo() {
@@ -236,18 +247,15 @@ for row in reader:
 # Lanza wpscan si whatweb detectó WordPress.
 analizar_wordpress() {
     local url="$1"
-    local args=(--no-banner --random-user-agent -e vp,vt,tt,u1-5 --disable-tls-checks -f cli-no-color)
+    local args=(--no-banner --random-user-agent -e vp,vt,u1-5 --detection-mode passive --disable-tls-checks)
 
     if [[ -n "$WPSCAN_API_TOKEN" ]]; then
         args+=(--api-token "$WPSCAN_API_TOKEN")
     fi
 
     local salida
-    salida=$(wpscan --url "$url" "${args[@]}" 2>/dev/null)
-
-    echo "$salida" \
-        | grep -E '^\[\+\]' \
-        | grep -Ev 'WPScan DB|WordPress version|The remote website|URL:|Started:|Requests Done|Cached Requests|Data Sent|Data Received|Memory used|Elapsed time'
+    salida=$(timeout 120 wpscan --url "$url" "${args[@]}" 2>/dev/null)
+    echo "$salida" | grep -vE "Requests Done|Cached Requests|Data Sent|Data Received|Memory used|Elapsed time"
 }
 #--------------------------------------------------------------------------------------------------------------------
 
@@ -445,7 +453,7 @@ fi
 
 #------------------------------------ FASE 1: Recon pasivo ----------------------------------------------------------
 
-echo -e "${BIG}[+] Iniciando reconocimiento web para: $target${NC}"
+echo -e "${GREEN_BOLD}[+] Iniciando reconocimiento web para: $target${NC}"
 echo "Fecha: $(date)"
 
         echo -e "\n"
@@ -561,12 +569,11 @@ if [[ "$wpscan_disponible" == true ]] && echo "$whatweb_output" | grep -qi "word
         if [[ "$EXPORT" == true ]]; then
             echo "$resultado_wpscan" > "$WP_FILE"
         fi
-    else
-        echo "[-] wpscan no reportó hallazgos relevantes"
-        md "\n### WordPress (wpscan)\n\nWordPress detectado, pero wpscan no reportó hallazgos relevantes."
     fi
 fi
 
+	echo -e "\n"
+	sleep 4
 
 # Llamada a wafw00f
 if [[ "$wafw00f_disponible" == true ]]; then
@@ -588,30 +595,9 @@ threads=80
 wordlist="/usr/share/dirb/wordlists/big.txt"
 tmp_json=$(mktemp)
 
-ejecutar_ffuf_con_spinner() {
-    local hilos="$1"
-    local salida_json="$2"
-
-    ffuf -ic -ac -s -w "$wordlist" -t "$hilos" \
-        -u "${protocol}://${target}/FUZZ" \
-        -o "$salida_json" -of json &>/dev/null &
-    local pid=$!
-
-    local spinner='|/-\'
-    local i=0
-    local inicio=$SECONDS
-    while kill -0 "$pid" 2>/dev/null; do
-        i=$(( (i+1) % 4 ))
-        local transcurrido=$(( SECONDS - inicio ))
-        printf "\r${YELLOW}[%s] Fuzzing en curso... (%ds)${NC}" "${spinner:$i:1}" "$transcurrido"
-        sleep 0.3
-    done
-    printf "\r%*s\r" 50 ""   # limpia la línea del spinner
-
-    wait "$pid"
-}
-
-ejecutar_ffuf_con_spinner "$threads" "$tmp_json"
+ffuf -ic -ac -s -w "$wordlist" -t "$threads" \
+    -u "${protocol}://${target}/FUZZ" \
+    -o "$tmp_json" -of json
 
 # --- Comprobación de rate-limiting ---
 rate_limit_hits=$(jq '[.results[] | select(.status == 429 or .status == 503 or .status == 508)] | length' "$tmp_json")
@@ -620,11 +606,13 @@ if (( rate_limit_hits > umbral_rate_limit )); then
     echo -e "${YELLOW}[!] Detectados $rate_limit_hits códigos de rate-limit (429/503/508) con $threads hilos.${NC}"
     echo -e "${YELLOW}[!] Reduciendo a 20 hilos y relanzando el escaneo...${NC}"
 
-    threads=20
+threads=20
     rm -f "$tmp_json"
     tmp_json=$(mktemp)
 
-    ejecutar_ffuf_con_spinner "$threads" "$tmp_json"
+    ffuf -ic -ac -s -w "$wordlist" -t "$threads" \
+        -u "${protocol}://${target}/FUZZ" \
+        -o "$tmp_json" -of json
 
     rate_limit_hits=$(jq '[.results[] | select(.status == 429 or .status == 503 or .status == 508)] | length' "$tmp_json")
     echo -e "${YELLOW}[!] Tras reducir hilos: $rate_limit_hits códigos de rate-limit restantes${NC}"
@@ -722,11 +710,10 @@ md "\n### robots.txt\n\n\`\`\`\n${robots_output:-(sin rutas relevantes o robots.
 
 
 # Iniciar descubrimiento de subdominios
+if [[ "$SUBDOMAIN_MODE" == false ]]; then
 echo -e "${YELL}[+] Iniciando descubrimiento de subdominios${NC}"
         echo -e "\n"
 
-
-if [[ "$SUBDOMAIN_MODE" == false ]]; then
 
 # Paso 1: subfinder
 echo -e "${GREEN}[+] Paso 1: subfinder${NC}"
