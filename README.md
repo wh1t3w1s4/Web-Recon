@@ -1,7 +1,7 @@
-# Web-Recon-v0.1.1-alpha
+# Web-Recon-v0.1.2-alpha
 The web reconnaissance tool by w1s4
 
-**Estado del proyecto: alpha (v0.1.1)** — en fase de pruebas con feedback de terceros. Puede tener bugs, comportamiento inconsistente entre targets, y cambiar bastante entre versiones. No recomendado todavía para uso en entornos críticos sin supervisión.
+**Estado del proyecto: alpha (v0.1.2)** — en fase de pruebas con feedback de terceros. Puede tener bugs, comportamiento inconsistente entre targets, y cambiar bastante entre versiones. No recomendado todavía para uso en entornos críticos sin supervisión.
 
 Web-Recon es un script en bash para automatizar la fase de reconocimiento (pasivo y activo) sobre un dominio objetivo. Encadena varias herramientas estándar de recon y aplica algo de lógica propia para reducir ruido en los resultados (filtrado de falsos positivos en fuzzing, detección de wildcard, agrupación de patrones repetidos, detección de versiones vulnerables conocidas, etc.).
 
@@ -23,18 +23,18 @@ El script se divide en dos fases. En modo normal se ejecutan ambas; en modo subd
 - **Detección de protocolo**: comprueba si el objetivo responde por HTTP, HTTPS o ninguno de los dos, antes de lanzar el resto de módulos.
 - **Fingerprinting web**: `whatweb` en modo verbose. Si detecta un bloqueo de Cloudflare (403 + challenge), omite la salida completa y avisa en su lugar.
 - **Detección de vulnerabilidades conocidas por versión**: cruza las tecnologías y versiones detectadas por `whatweb` contra una base de datos local de CVEs comprobables (jQuery, Bootstrap, nginx, Apache, OpenSSL, PHP, etc.), reportando coincidencias con su CVE y referencia.
-- **Detección de WordPress**: si `whatweb` detecta el CMS, lanza `wpscan` automáticamente en busca de plugins/temas vulnerables y usuarios.
+- **Detección de WordPress**: si `whatweb` detecta el CMS, lanza `wpscan` automáticamente en modo pasivo (detección por rastro en HTML, sin barrido activo de slugs) en busca de plugins/temas vulnerables y usuarios, con límite de tiempo (`timeout`) como salvaguarda.
 - **WAF detection**: `wafw00f` para identificar si hay un WAF delante del objetivo.
 - **Fuzzing de directorios**: `ffuf` contra el objetivo, con:
   - Autocalibración (`-ac`) para mitigar comportamiento wildcard.
   - Reducción automática de hilos (de 80 a 20) si se detecta rate-limiting (códigos 429/503/508).
   - Agrupación de resultados por status/words/lines para detectar patrones repetidos (falsos positivos).
   - Resultados "limpios" mostrados directamente; resultados "sospechosos" (patrón repetido) resueltos con `httpx` o `curl` como fallback.
-  - Indicador de actividad en pantalla mientras el escaneo está en curso.
+  - Matches visibles en tiempo real a medida que se encuentran.
 - **robots.txt**: extracción de rutas `Disallow`/`Allow`, filtrando comentarios y líneas irrelevantes.
 - **Descubrimiento de subdominios** *(solo en modo normal, omitido con `-s`)*:
   - `subfinder` como fuente principal.
-  - `crt.sh` (Certificate Transparency) como fuente complementaria, con reintentos, backoff y parseo robusto de CSV/JSON, con reintentos y backoff si el servicio da rate-limit, lo cual es común al realizarle peticiones desde curl.
+  - `crt.sh` (Certificate Transparency) como fuente complementaria, con reintentos, backoff y parseo robusto de CSV/JSON (vía Python, evita el ruido de campos con comas internas).
   - Unión y deduplicación de ambas fuentes.
   - Verificación de cuáles subdominios responden realmente, filtrando 404s.
 
@@ -46,13 +46,17 @@ Con `-s` se omiten: WHOIS, registros DNS adicionales, y todo el bloque de descub
 
 Se mantienen: IP + geolocalización, detección de protocolo, whatweb, detección de vulnerabilidades por versión, WordPress/wpscan, wafw00f, fuzzing de directorios y robots.txt.
 
+## Kill switch
+
+En cualquier momento de la ejecución, **Ctrl+K** finaliza el script de forma inmediata y limpia (restaura la configuración del terminal antes de salir). Útil para escaneos que se alargan más de lo esperado sin tener que cerrar la terminal.
+
 ## Requisitos del sistema
 
 Probado en **Debian/Ubuntu**. No hay soporte todavía para Arch, Fedora o macOS — el instalador (`setup.sh`) asume `apt` como gestor de paquetes.
 
 ## Instalación / Dependencias
 
-La forma recomendada es usar el script de instalación incluido, que resuelve todas las dependencias automáticamente (paquetes de sistema, herramientas Go, wafw00f, wpscan, la wordlist de fuzzing e `ipinfo`):
+La forma recomendada es usar el script de instalación incluido, que resuelve todas las dependencias automáticamente (paquetes de sistema, herramientas Go, wafw00f, wpscan con su base de datos actualizada, la wordlist de fuzzing e `ipinfo`):
 
 ```bash
 git clone https://github.com/wh1t3w1s4/Web-Recon
@@ -84,7 +88,15 @@ Si falta alguna dependencia, el script avisa al inicio e indica el comando de in
 
 > Nota: `httpx` de ProjectDiscovery puede entrar en conflicto con el paquete de Python del mismo nombre (`pip install httpx`, un cliente HTTP). El script referencia el binario por ruta absoluta (`$HOME/.go/bin/httpx` por defecto) para evitar ambigüedad. Si lo tienes en otra ubicación, puedes indicarlo con la variable de entorno `HTTPX_BIN`.
 
-> Si deseas meter el script en el PATH para su llamada relativa tan solo ejecuta `sudo mv web_recon.sh /usr/local/bin/`, habiéndote asegurado de que esa ruta se contempla en tu PATH con `echo $PATH`
+### Token de la API de WPScan (opcional)
+
+Si tienes un token gratuito de [wpscan.com](https://wpscan.com/), el script lo usa automáticamente para consultar su base de datos de vulnerabilidades. Expórtalo antes de ejecutar el script:
+
+```bash
+export WPSCAN_API_TOKEN="tu_token_aqui"
+```
+
+Sin token, wpscan sigue funcionando igual para detección de plugins/temas/usuarios, solo sin el cruce contra la base de datos de CVEs de WPScan.
 
 ## Uso
 
@@ -143,10 +155,18 @@ Limitaciones a tener en cuenta:
 
 ## Pendiente / roadmap
 
-- Mejorar la fiabilidad de la detección/análisis de WordPress (actualmente inconsistente).
+Próximo en la lista:
+- **Análisis de headers HTTP y cookies de seguridad**: ausencia de `HttpOnly`, `Secure`, `SameSite`, `Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`, documentando el riesgo concreto de cada ausencia (ej. cookie sin `HttpOnly` → robable vía `document.cookie` en caso de XSS).
+
+Más adelante:
+- Cruce con `searchsploit` para detectar exploits públicos conocidos sobre las versiones identificadas (más allá del CVE documentado en `VULN_DB` — esto sería "¿hay una PoC pública ahora mismo?").
+- Ampliar la base de datos de vulnerabilidades por versión (`VULN_DB`).
+- Export adicional en JSON, para post-procesado o integración con otras herramientas.
+- Comparación entre escaneos de un mismo target en distintas fechas (qué cambió: subdominios nuevos, versiones, directorios).
+- Comparación de postura de seguridad entre el dominio principal y sus subdominios — detectar subdominios con protecciones sensiblemente más débiles que el dominio raíz.
+- Mejorar la fiabilidad de la detección/análisis de WordPress en casos límite.
 - Screenshots de subdominios/directorios vivos.
 - Listado detallado de los resultados "sospechosos" del fuzzing en el reporte (actualmente solo se indica el conteo).
-- Ampliar la base de datos de vulnerabilidades por versión (`VULN_DB`).
 
 ## Feedback y reporte de bugs
 
