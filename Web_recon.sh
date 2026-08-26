@@ -24,7 +24,7 @@ cat << "EOF"
 EOF
 echo -e "${NC}"
 echo -e "${YELLOW}         >> Web Reconnaissance Tool <<${NC}"
-echo -e "${GREEN}            Version 0.1.1 - by w1s4${NC}"
+echo -e "${GREEN}            Version 0.2.1 - by w1s4${NC}"
 echo -e "${CYAN}=========================================================${NC}"
 echo ""
 }
@@ -178,6 +178,80 @@ detectar_protocolo() {
 }
 #-------------------------------------------------------------------------------------------------------------
 
+# Función: consultar_dns_extra
+# Registros MX, TXT, NS, SOA, CNAME, AAAA con +short.
+# Filtra líneas vacías y limpia comillas en TXT.
+consultar_dns_extra() {
+    local domain="$1"
+
+    for tipo in MX NS TXT SOA CNAME CAA; do
+        echo -e "${GREEN}[+] ${tipo}${NC}"
+        local resultado
+        resultado=$(dig "$tipo" +short "$domain" | grep -v '^\s*$')
+
+        if [[ -z "$resultado" ]]; then
+            echo "  (sin registros)"
+        else
+            while IFS= read -r linea; do
+                [[ "$tipo" == "TXT" ]] && linea=$(echo "$linea" | tr -d '"')
+                local nota
+                nota=$(interpretar_registro "$tipo" "$linea")
+                if [[ -n "$nota" ]]; then
+                    echo "  $linea"
+                    echo "    → $nota"
+                else
+                    echo "  $linea"
+                fi
+            done <<< "$resultado"
+        fi
+        echo -e "\n"
+    done
+}
+#-------------------------------------------------------------------------------------------------------------
+
+# Función: interpretar_registro
+# Devuelve una anotación legible para un valor de registro DNS, o cadena vacía si no reconoce el patrón.
+interpretar_registro() {
+    local tipo="$1"
+    local valor="$2"
+    local v_lower="${valor,,}"
+
+    case "$tipo" in
+        TXT)
+            [[ "$v_lower" == v=spf1* ]] && { echo "SPF — define qué servidores pueden enviar correo en nombre del dominio"; return; }
+            [[ "$v_lower" == v=dkim1* ]] && { echo "DKIM — firma criptográfica de autenticidad de correo"; return; }
+            [[ "$v_lower" == v=dmarc1* ]] && { echo "DMARC — política de qué hacer si el correo falla SPF/DKIM"; return; }
+            [[ "$v_lower" == google-site-verification=* ]] && { echo "Verificación de propiedad: Google Search Console"; return; }
+            [[ "$v_lower" == ms=* ]] && { echo "Verificación de propiedad: Microsoft 365"; return; }
+            [[ "$v_lower" == facebook-domain-verification=* ]] && { echo "Verificación de propiedad: Facebook Business"; return; }
+            ;;
+        NS)
+            [[ "$v_lower" == *cloudflare.com* ]] && { echo "Cloudflare (probable proxy/CDN delante del origen real)"; return; }
+            [[ "$v_lower" == *awsdns* ]] && { echo "AWS Route 53"; return; }
+            [[ "$v_lower" == *domaincontrol.com* ]] && { echo "GoDaddy"; return; }
+            ;;
+        MX)
+            [[ "$v_lower" == *google.com* || "$v_lower" == *googlemail.com* ]] && { echo "Google Workspace (correo corporativo)"; return; }
+            [[ "$v_lower" == *outlook.com* || "$v_lower" == *protection.outlook.com* ]] && { echo "Microsoft 365"; return; }
+            [[ "$v_lower" == *zoho.com* ]] && { echo "Zoho Mail"; return; }
+            ;;
+        CNAME)
+            [[ "$v_lower" == *herokuapp.com* ]] && { echo "Apunta a Heroku — revisar posible subdomain takeover si el recurso no existe"; return; }
+            [[ "$v_lower" == *github.io* ]] && { echo "Apunta a GitHub Pages — revisar posible subdomain takeover si el recurso no existe"; return; }
+            [[ "$v_lower" == *s3.amazonaws.com* || "$v_lower" == *s3-website* ]] && { echo "Apunta a AWS S3 — revisar posible subdomain takeover si el bucket no existe"; return; }
+            [[ "$v_lower" == *cloudfront.net* ]] && { echo "AWS CloudFront (CDN)"; return; }
+            [[ "$v_lower" == *azurewebsites.net* ]] && { echo "Azure App Service — revisar posible subdomain takeover si el recurso no existe"; return; }
+            ;;
+        CAA)
+            [[ "$v_lower" == *letsencrypt.org* ]] && { echo "Autoriza a Let's Encrypt a emitir certificados"; return; }
+            [[ "$v_lower" == *digicert.com* ]] && { echo "Autoriza a DigiCert a emitir certificados"; return; }
+            [[ "$v_lower" == *sectigo.com* || "$v_lower" == *comodoca.com* ]] && { echo "Autoriza a Sectigo/Comodo a emitir certificados"; return; }
+            ;;
+    esac
+    echo ""
+}
+#-------------------------------------------------------------------------------------------------------------
+
 # Función: resolver_con_curl
 # Fallback si no está disponible httpx. Devuelve código HTTP + título.
 resolver_con_curl() {
@@ -193,6 +267,126 @@ resolver_con_curl() {
     echo "[$codigo] $url ${titulo:+- $titulo}"
 }
 #-------------------------------------------------------------------------------------------------------------
+
+# Función: analizar_cookies
+# Descarga los headers de la URL (y de /login si no hay cookies en la primera pasada),
+#evalúa flags de seguridad de cookies, HSTS, y otras cabeceras de seguridad/exposición de información.
+analizar_cookies() {
+    local base_url="$1"
+    local headers cookie_lines url_usada
+
+    url_usada="$base_url"
+    headers=$(curl -s -k -L -D - -o /dev/null --connect-timeout 5 --max-time 10 -A "Mozilla/5.0" "$url_usada")
+    cookie_lines=$(echo "$headers" | grep -i '^set-cookie:')
+
+    if [[ -z "$cookie_lines" ]]; then
+        local login_url="${base_url%/}/login"
+        local headers_login
+        headers_login=$(curl -s -k -L -D - -o /dev/null --connect-timeout 5 --max-time 10 -A "Mozilla/5.0" "$login_url")
+        local cookie_lines_login
+        cookie_lines_login=$(echo "$headers_login" | grep -i '^set-cookie:')
+
+        if [[ -n "$cookie_lines_login" ]]; then
+            echo "(Sin cookies en la raíz; se encontraron cookies en ${login_url})"
+            echo ""
+            headers="$headers_login"
+            cookie_lines="$cookie_lines_login"
+            url_usada="$login_url"
+        fi
+    fi
+
+    # --- Cabeceras de seguridad / exposición de información ---
+    echo "-- Cabeceras --"
+
+    if echo "$headers" | grep -qi '^strict-transport-security:'; then
+        local hsts_value
+        hsts_value=$(echo "$headers" | grep -i '^strict-transport-security:' | head -n1)
+        echo "HSTS: presente (${hsts_value#*: })"
+    else
+        echo "[!] HSTS ausente — el sitio no fuerza HTTPS a nivel de navegador; permite downgrade a HTTP en la primera visita o en ataques de tipo SSL stripping"
+    fi
+
+    if echo "$headers" | grep -qi '^x-frame-options:'; then
+        echo "X-Frame-Options: presente"
+    elif echo "$headers" | grep -qi 'frame-ancestors'; then
+        echo "X-Frame-Options: ausente, pero CSP define frame-ancestors (protección equivalente)"
+    else
+        echo "[!] X-Frame-Options ausente (y sin frame-ancestors en CSP) — posible clickjacking"
+    fi
+
+    if echo "$headers" | grep -qi '^content-security-policy:'; then
+        echo "Content-Security-Policy: presente"
+    else
+        echo "[!] Content-Security-Policy ausente — sin defensa en profundidad frente a XSS"
+    fi
+
+    if echo "$headers" | grep -qi '^x-content-type-options: *nosniff'; then
+        echo "X-Content-Type-Options: presente (nosniff)"
+    else
+        echo "[!] X-Content-Type-Options ausente — permite MIME-sniffing"
+    fi
+
+    if echo "$headers" | grep -qi '^referrer-policy:'; then
+        echo "Referrer-Policy: presente"
+    else
+        echo "[!] Referrer-Policy ausente — puede filtrar URLs completas (con parámetros sensibles) a terceros vía Referer"
+    fi
+
+    local acao acac
+    acao=$(echo "$headers" | grep -i '^access-control-allow-origin:' | head -n1)
+    acac=$(echo "$headers" | grep -i '^access-control-allow-credentials:' | head -n1)
+    if [[ -n "$acao" ]]; then
+        if [[ "$acao" == *'*'* && "${acac,,}" == *true* ]]; then
+            echo "[!!!] CORS mal configurado — Access-Control-Allow-Origin: * junto con Allow-Credentials: true permite a cualquier origen leer respuestas autenticadas"
+        else
+            echo "Access-Control-Allow-Origin: ${acao#*: }"
+        fi
+    fi
+
+    local xpb server_hdr
+    xpb=$(echo "$headers" | grep -i '^x-powered-by:' | head -n1)
+    server_hdr=$(echo "$headers" | grep -i '^server:' | head -n1)
+    [[ -n "$xpb" ]] && echo "[i] X-Powered-By expuesto: ${xpb#*: } (fingerprinting facilitado, considerar ocultarlo)"
+    [[ -n "$server_hdr" ]] && echo "[i] Server expuesto: ${server_hdr#*: } (fingerprinting facilitado, considerar ocultar versión)"
+
+    echo ""
+
+    # --- Cookies ---
+    echo "-- Cookies --"
+    if [[ -z "$cookie_lines" ]]; then
+        echo "No se detectaron cookies ni en la raíz ni en ${base_url%/}/login."
+        return 0
+    fi
+
+    while IFS= read -r line; do
+        local cookie_full="${line#*: }"
+        local cookie_name="${cookie_full%%=*}"
+        local cookie_lower="${cookie_full,,}"
+
+        echo "Cookie: ${cookie_name} (vista en: ${url_usada})"
+
+        if [[ "$cookie_lower" != *httponly* ]]; then
+            echo "  [!] Sin HttpOnly — accesible vía document.cookie; robable en caso de XSS"
+        fi
+
+        if [[ "$cookie_lower" != *secure* ]]; then
+            echo "  [!] Sin Secure — puede transmitirse en texto plano si en algún momento se accede por HTTP"
+        fi
+
+        if [[ "$cookie_lower" != *samesite* ]]; then
+            echo "  [!] Sin SameSite — expuesta a CSRF si no hay otras mitigaciones"
+        elif [[ "$cookie_lower" == *samesite=none* ]]; then
+            echo "  [!] SameSite=None — permite envío cross-site; requiere Secure para ser válido en navegadores modernos"
+        fi
+
+        if [[ "$cookie_lower" != *httponly* && "$cookie_lower" != *secure* && "$cookie_lower" != *samesite* ]]; then
+            echo "  [!!!] Cookie sin ninguna flag de seguridad — máxima exposición"
+        fi
+
+        echo ""
+    done <<< "$cookie_lines"
+}
+#-------------------------------------------------------------------------------------------------------------------
 
 # Función: consultar_crtsh
 # Realiza peticiones a https://crt.sh/$domain y lo exporta en JSON
@@ -256,80 +450,6 @@ analizar_wordpress() {
     local salida
     salida=$(timeout 120 wpscan --url "$url" "${args[@]}" 2>/dev/null)
     echo "$salida" | grep -vE "Requests Done|Cached Requests|Data Sent|Data Received|Memory used|Elapsed time"
-}
-#--------------------------------------------------------------------------------------------------------------------
-
-# Función: interpretar_registro
-# Devuelve una anotación legible para un valor de registro DNS, o cadena vacía si no reconoce el patrón.
-interpretar_registro() {
-    local tipo="$1"
-    local valor="$2"
-    local v_lower="${valor,,}"
-
-    case "$tipo" in
-        TXT)
-            [[ "$v_lower" == v=spf1* ]] && { echo "SPF — define qué servidores pueden enviar correo en nombre del dominio"; return; }
-            [[ "$v_lower" == v=dkim1* ]] && { echo "DKIM — firma criptográfica de autenticidad de correo"; return; }
-            [[ "$v_lower" == v=dmarc1* ]] && { echo "DMARC — política de qué hacer si el correo falla SPF/DKIM"; return; }
-            [[ "$v_lower" == google-site-verification=* ]] && { echo "Verificación de propiedad: Google Search Console"; return; }
-            [[ "$v_lower" == ms=* ]] && { echo "Verificación de propiedad: Microsoft 365"; return; }
-            [[ "$v_lower" == facebook-domain-verification=* ]] && { echo "Verificación de propiedad: Facebook Business"; return; }
-            ;;
-        NS)
-            [[ "$v_lower" == *cloudflare.com* ]] && { echo "Cloudflare (probable proxy/CDN delante del origen real)"; return; }
-            [[ "$v_lower" == *awsdns* ]] && { echo "AWS Route 53"; return; }
-            [[ "$v_lower" == *domaincontrol.com* ]] && { echo "GoDaddy"; return; }
-            ;;
-        MX)
-            [[ "$v_lower" == *google.com* || "$v_lower" == *googlemail.com* ]] && { echo "Google Workspace (correo corporativo)"; return; }
-            [[ "$v_lower" == *outlook.com* || "$v_lower" == *protection.outlook.com* ]] && { echo "Microsoft 365"; return; }
-            [[ "$v_lower" == *zoho.com* ]] && { echo "Zoho Mail"; return; }
-            ;;
-        CNAME)
-            [[ "$v_lower" == *herokuapp.com* ]] && { echo "Apunta a Heroku — revisar posible subdomain takeover si el recurso no existe"; return; }
-            [[ "$v_lower" == *github.io* ]] && { echo "Apunta a GitHub Pages — revisar posible subdomain takeover si el recurso no existe"; return; }
-            [[ "$v_lower" == *s3.amazonaws.com* || "$v_lower" == *s3-website* ]] && { echo "Apunta a AWS S3 — revisar posible subdomain takeover si el bucket no existe"; return; }
-            [[ "$v_lower" == *cloudfront.net* ]] && { echo "AWS CloudFront (CDN)"; return; }
-            [[ "$v_lower" == *azurewebsites.net* ]] && { echo "Azure App Service — revisar posible subdomain takeover si el recurso no existe"; return; }
-            ;;
-        CAA)
-            [[ "$v_lower" == *letsencrypt.org* ]] && { echo "Autoriza a Let's Encrypt a emitir certificados"; return; }
-            [[ "$v_lower" == *digicert.com* ]] && { echo "Autoriza a DigiCert a emitir certificados"; return; }
-            [[ "$v_lower" == *sectigo.com* || "$v_lower" == *comodoca.com* ]] && { echo "Autoriza a Sectigo/Comodo a emitir certificados"; return; }
-            ;;
-    esac
-    echo ""
-}
-#--------------------------------------------------------------------------------------------------------------------
-
-# Función: consultar_dns_extra
-# Registros MX, TXT, NS, SOA, CNAME, AAAA con +short.
-# Filtra líneas vacías y limpia comillas en TXT.
-consultar_dns_extra() {
-    local domain="$1"
-
-    for tipo in MX NS TXT SOA CNAME CAA; do
-        echo -e "${GREEN}[+] ${tipo}${NC}"
-        local resultado
-        resultado=$(dig "$tipo" +short "$domain" | grep -v '^\s*$')
-
-        if [[ -z "$resultado" ]]; then
-            echo "  (sin registros)"
-        else
-            while IFS= read -r linea; do
-                [[ "$tipo" == "TXT" ]] && linea=$(echo "$linea" | tr -d '"')
-                local nota
-                nota=$(interpretar_registro "$tipo" "$linea")
-                if [[ -n "$nota" ]]; then
-                    echo "  $linea"
-                    echo "    → $nota"
-                else
-                    echo "  $linea"
-                fi
-            done <<< "$resultado"
-        fi
-        echo -e "\n"
-    done
 }
 #--------------------------------------------------------------------------------------------------------------------
 
@@ -407,6 +527,60 @@ detectar_vulnerabilidades_version() {
         return 0
     fi
     return 1
+}
+#-------------------------------------------------------------------------------------------------------------------
+
+# Función: test_bypass_403
+# Prueba variaciones de ruta y headers contra una URL con 403.
+# Imprime solo las variaciones que devuelven código != 403.
+test_bypass_403() {
+    local protocol="$1"
+    local target="$2"
+    local path="$3"   # incluye la barra inicial, ej: /admin
+    local base="${protocol}://${target}"
+    local found=false
+    local no_lead="${path#/}"
+
+    local path_variants=(
+        "${path}/"
+        "//${no_lead}"
+        "/./${no_lead}"
+        "${path}/."
+        "${path}%20"
+        "${path}%09"
+        "/${no_lead^^}"
+        "${path}..;/"
+    )
+
+    for variant in "${path_variants[@]}"; do
+        local code
+        code=$(curl -s -k -L -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 "${base}${variant}")
+        if [[ "$code" != "403" && "$code" != "404" ]]; then
+            echo "  [$code] ${base}${variant}  (variación de ruta)"
+            found=true
+        fi
+    done
+
+    local header_tests=(
+        "X-Original-URL: ${path}"
+        "X-Rewrite-URL: ${path}"
+        "X-Forwarded-For: 127.0.0.1"
+        "X-Forwarded-Host: 127.0.0.1"
+        "X-Custom-IP-Authorization: 127.0.0.1"
+        "Referer: ${base}${path}"
+    )
+
+    for header in "${header_tests[@]}"; do
+        local code
+        code=$(curl -s -k -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 -H "$header" "${base}${path}")
+        if [[ "$code" != "403" && "$code" != "404" ]]; then
+            echo "  [$code] ${base}${path}  (header: ${header%%:*})"
+            found=true
+        fi
+    done
+
+    [[ "$found" == false ]] && return 1
+    return 0
 }
 #-------------------------------------------------------------------------------------------------------------------
 
@@ -542,6 +716,11 @@ else
 fi
 	echo -e "\n"
 
+echo -e "${GREEN}[+] Analizando cabeceras de seguridad y cookies${NC}"
+cookies_output=$(analizar_cookies "${protocol}://${target}")
+echo "$cookies_output"
+md "\n### Cabeceras de seguridad y cookies\n\n\`\`\`\n${cookies_output}\n\`\`\`"
+	echo -e "\n"
 
 # Comprobación de versiones vulnerables conocidas
 echo -e "${GREEN}[+] Comprobando vulnerabilidades conocidas por versión${NC}"
@@ -651,6 +830,8 @@ while IFS='|' read -r url status words lines; do
         limpios+=("$url")
     fi
 done < "$tmp_data"
+
+mapfile -t forbidden_urls < <(grep '|403|' "$tmp_data" | cut -d'|' -f1)
 rm -f "$tmp_data"
 
 
@@ -665,7 +846,7 @@ if (( ${#sospechosos[@]} > 0 )); then
     echo -e "${YELL}[+] ${#sospechosos[@]} resultados con patrón repetido (>${umbral_ruido} veces, mismo status/words/lines). Resolviendo:${NC}"
 
     if [[ "$httpx_disponible" == true ]]; then
-        printf '%s\n' "${sospechosos[@]}" | "$HTTPX_BIN" -silent -sc -title
+        printf '%s\n' "${sospechosos[@]}" | "$HTTPX_BIN" -silent -sc -title -fc 404
     else
         echo -e "${YELLOW}[!] httpx no disponible, usando fallback con curl (más lento, limitado a 50 URLs)${NC}"
         max_resolver=50
@@ -689,6 +870,38 @@ if (( ${#sospechosos[@]} > 0 )); then
     md "\n#### Resultados sospechosos (${#sospechosos[@]}, patrón repetido >${umbral_ruido} veces)\n\nDescartados por comportamiento repetido, no listados individualmente en el reporte."
 else
     md "\n#### Resultados sospechosos\n\nNo se detectaron grupos de ruido repetido."
+fi
+
+# -------------------------------- Bypass-403 -------------------------------------------------------
+if (( ${#forbidden_urls[@]} > 0 )); then
+    if [[ "$EXPORT" == false ]]; then
+        read -rp "$(echo -e "${YELLOW}[!] Se detectaron ${#forbidden_urls[@]} rutas con 403 durante el fuzzing. ¿Quieres intentar técnicas de bypass sobre ellas? [y/N]: ${NC}")" respuesta_bypass
+
+        if [[ "${respuesta_bypass,,}" == "y" ]]; then
+            echo -e "${GREEN}[+] Probando técnicas de bypass de 403${NC}"
+            bypass_output=""
+            for url in "${forbidden_urls[@]}"; do
+                path="${url#${protocol}://${target}}"
+                echo "-- $url --"
+                resultado_bypass=$(test_bypass_403 "$protocol" "$target" "$path")
+                if [[ -n "$resultado_bypass" ]]; then
+                    echo "$resultado_bypass"
+                    bypass_output+="-- $url --"$'\n'"${resultado_bypass}"$'\n\n'
+                else
+                    echo "  [-] No se encontró ningún bypass"
+                    bypass_output+="-- $url --"$'\n'"  [-] No se encontró ningún bypass"$'\n\n'
+                fi
+            done
+            md "\n### Bypass de 403\n\n\`\`\`\n${bypass_output}\n\`\`\`"
+        else
+            echo "[-] Bypass de 403 omitido por el usuario"
+            md "\n### Bypass de 403\n\nOmitido por el usuario."
+        fi
+    else
+        echo -e "${YELLOW}[!] Se detectaron ${#forbidden_urls[@]} rutas con 403 durante el fuzzing.${NC}"
+        echo -e "${YELLOW}    Vuelve a ejecutar con -n para poder probar bypass de forma interactiva.${NC}"
+        md "\n### Bypass de 403\n\nSe detectaron ${#forbidden_urls[@]} rutas con 403. Ejecuta con \`-n\` para probar bypass interactivamente."
+    fi
 fi
 
 	echo -e "\n"
