@@ -1,9 +1,9 @@
-# Web-Recon-v0.1.2-alpha
+# Web-Recon-v0.1.3-alpha
 The web reconnaissance tool by w1s4
 
-**Estado del proyecto: alpha (v0.1.2)** — en fase de pruebas con feedback de terceros. Puede tener bugs, comportamiento inconsistente entre targets, y cambiar bastante entre versiones. No recomendado todavía para uso en entornos críticos sin supervisión.
+**Estado del proyecto: alpha (v0.1.3)** — en fase de pruebas con feedback de terceros. Puede tener bugs, comportamiento inconsistente entre targets, y cambiar bastante entre versiones. No recomendado todavía para uso en entornos críticos sin supervisión.
 
-Web-Recon es un script en bash para automatizar la fase de reconocimiento (pasivo y activo) sobre un dominio objetivo. Encadena varias herramientas estándar de recon y aplica algo de lógica propia para reducir ruido en los resultados (filtrado de falsos positivos en fuzzing, detección de wildcard, agrupación de patrones repetidos, detección de versiones vulnerables conocidas, etc.).
+Web-Recon es un script en bash para automatizar la fase de reconocimiento (pasivo y activo) sobre un dominio objetivo. Encadena varias herramientas estándar de recon y aplica algo de lógica propia para reducir ruido en los resultados (filtrado de falsos positivos en fuzzing, detección de wildcard, agrupación de patrones repetidos, detección de versiones vulnerables conocidas, análisis de cabeceras/cookies, bypass de 403, etc.).
 
 Esta herramienta está pensada únicamente para uso en auditorías, CTFs, bug bounty o programas de pentesting donde se cuenta con autorización explícita sobre el objetivo.
 
@@ -23,6 +23,7 @@ El script se divide en dos fases. En modo normal se ejecutan ambas; en modo subd
 - **Detección de protocolo**: comprueba si el objetivo responde por HTTP, HTTPS o ninguno de los dos, antes de lanzar el resto de módulos.
 - **Fingerprinting web**: `whatweb` en modo verbose. Si detecta un bloqueo de Cloudflare (403 + challenge), omite la salida completa y avisa en su lugar.
 - **Detección de vulnerabilidades conocidas por versión**: cruza las tecnologías y versiones detectadas por `whatweb` contra una base de datos local de CVEs comprobables (jQuery, Bootstrap, nginx, Apache, OpenSSL, PHP, etc.), reportando coincidencias con su CVE y referencia.
+- **Cabeceras de seguridad y cookies**: analiza en una única pasada HSTS, X-Frame-Options/frame-ancestors, Content-Security-Policy, X-Content-Type-Options, Referrer-Policy, configuración de CORS, y exposición de información vía X-Powered-By/Server. Sobre las cookies de sesión evalúa HttpOnly, Secure y SameSite, documentando el riesgo concreto de cada ausencia (por ejemplo, cookie sin HttpOnly → robable vía `document.cookie` en caso de XSS). Si no hay cookies en la raíz, reintenta contra `/login` antes de darlo por vacío.
 - **Detección de WordPress**: si `whatweb` detecta el CMS, lanza `wpscan` automáticamente en modo pasivo (detección por rastro en HTML, sin barrido activo de slugs) en busca de plugins/temas vulnerables y usuarios, con límite de tiempo (`timeout`) como salvaguarda.
 - **WAF detection**: `wafw00f` para identificar si hay un WAF delante del objetivo.
 - **Fuzzing de directorios**: `ffuf` contra el objetivo, con:
@@ -31,6 +32,7 @@ El script se divide en dos fases. En modo normal se ejecutan ambas; en modo subd
   - Agrupación de resultados por status/words/lines para detectar patrones repetidos (falsos positivos).
   - Resultados "limpios" mostrados directamente; resultados "sospechosos" (patrón repetido) resueltos con `httpx` o `curl` como fallback.
   - Matches visibles en tiempo real a medida que se encuentran.
+- **Bypass de 403**: si el fuzzing detecta rutas con código 403, prueba automáticamente (en modo `-n`, previa confirmación) variaciones de ruta (barra final, doble barra, encoding, mayúsculas, `..;/`) y de cabeceras (`X-Original-URL`, `X-Forwarded-For`, `Referer`, etc.) para comprobar si el filtro es evitable. Solo se muestran las variaciones que devuelven un código distinto de 403/404, siguiendo redirecciones para descartar 301 que acaban en la misma pared.
 - **robots.txt**: extracción de rutas `Disallow`/`Allow`, filtrando comentarios y líneas irrelevantes.
 - **Descubrimiento de subdominios** *(solo en modo normal, omitido con `-s`)*:
   - `subfinder` como fuente principal.
@@ -40,11 +42,14 @@ El script se divide en dos fases. En modo normal se ejecutan ambas; en modo subd
 
 ## Modo subdominio (`-s`)
 
-Pensado para cuando el objetivo ya es un subdominio conocido (por ejemplo, tras descubrirlo en un escaneo anterior) y no tiene sentido repetir WHOIS, registros DNS del dominio raíz, ni volver a buscar subdominios de un subdominio.
+Pensado para cuando el objetivo ya es un subdominio conocido (por ejemplo, tras descubrirlo en un escaneo anterior) y no tiene sentido repetir WHOIS, registros DNS del dominio raíz, etc.
 
-Con `-s` se omiten: WHOIS, registros DNS adicionales, y todo el bloque de descubrimiento de subdominios (subfinder/crt.sh/verificación de vivos).
+Con `-s` se mantienen: IP + geolocalización, detección de protocolo, whatweb, detección de vulnerabilidades por versión, cabeceras/cookies, WordPress/wpscan, wafw00f, fuzzing de directorios, bypass de 403 y robots.txt.
 
-Se mantienen: IP + geolocalización, detección de protocolo, whatweb, detección de vulnerabilidades por versión, WordPress/wpscan, wafw00f, fuzzing de directorios y robots.txt.
+## Bypass de 403 — comportamiento según el modo de ejecución
+
+- **Con `-n` (sin exportación)**: si el fuzzing detecta al menos un 403, se pregunta interactivamente `¿Quieres intentar técnicas de bypass sobre ellas? [y/N]` (case-insensitive). Solo se ejecuta si se confirma.
+- **En modo normal (con exportación)**: se informa de cuántas rutas con 403 se detectaron, sin preguntar ni ejecutar el bypass, para no interrumpir un flujo pensado para dejarse corriendo sin intervención.
 
 ## Kill switch
 
@@ -56,7 +61,7 @@ Probado en **Debian/Ubuntu**. No hay soporte todavía para Arch, Fedora o macOS 
 
 ## Instalación / Dependencias
 
-La forma recomendada es usar el script de instalación incluido, que resuelve todas las dependencias automáticamente (paquetes de sistema, herramientas Go, wafw00f, wpscan con su base de datos actualizada, la wordlist de fuzzing e `ipinfo`):
+La forma recomendada es usar el script de instalación incluido, que resuelve todas las dependencias automáticamente:
 
 ```bash
 git clone https://github.com/wh1t3w1s4/Web-Recon
@@ -73,7 +78,7 @@ Si prefieres instalar todo a mano, consulta la tabla de dependencias a continuac
 |---|---|---|
 | `whois` | Fase 1 | `apt install whois` |
 | `dig` | Fase 1 | `apt install dnsutils` |
-| `curl` | Todas las fases | `apt install curl` |
+| `curl` | Todas las fases (incluye análisis de cabeceras/cookies y bypass de 403) | `apt install curl` |
 | `jq` | Parseo de JSON (ffuf, crt.sh) | `apt install jq` |
 | `python3` | Parseo robusto de CSV (fallback de crt.sh) | `apt install python3` |
 | `whatweb` | Fase 2 | `apt install whatweb` |
@@ -107,7 +112,7 @@ Sin token, wpscan sigue funcionando igual para detección de plugins/temas/usuar
 | Opción | Descripción |
 |---|---|
 | `-o, --output <ruta>` | Carpeta base donde se guardarán los resultados (por defecto: `./resultados`) |
-| `-n, --no-export` | No crea carpeta ni exporta nada, solo muestra en pantalla |
+| `-n, --no-export` | No crea carpeta ni exporta nada, solo muestra en pantalla. Habilita la pregunta interactiva de bypass de 403 |
 | `-s, --subdomain` | Modo subdominio: omite WHOIS, DNS extra y descubrimiento de subdominios |
 | `-h, --help` | Muestra la ayuda de uso |
 
@@ -134,7 +139,7 @@ Salvo que uses `-n`, cada ejecución crea una carpeta `<ruta_base>/<target>_<tim
 
 ```
 [ Pega aquí un escaneo de ejemplo actualizado, con el dominio real anonimizado,
-  que refleje ya el bloque de vulnerabilidades por versión y el intérprete de DNS ]
+  que refleje ya vulnerabilidades por versión, cabeceras/cookies y bypass de 403 ]
 ```
 
 ## Wordlists
@@ -153,21 +158,6 @@ Limitaciones a tener en cuenta:
 - Solo cubre las tecnologías añadidas manualmente a `VULN_DB` — no es una base de datos exhaustiva ni se actualiza automáticamente.
 - Un WAF u otra mitigación externa puede impedir la explotación real aunque la versión coincida.
 
-## Pendiente / roadmap
-
-Próximo en la lista:
-- **Análisis de headers HTTP y cookies de seguridad**: ausencia de `HttpOnly`, `Secure`, `SameSite`, `Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`, documentando el riesgo concreto de cada ausencia (ej. cookie sin `HttpOnly` → robable vía `document.cookie` en caso de XSS).
-
-Más adelante:
-- Cruce con `searchsploit` para detectar exploits públicos conocidos sobre las versiones identificadas (más allá del CVE documentado en `VULN_DB` — esto sería "¿hay una PoC pública ahora mismo?").
-- Ampliar la base de datos de vulnerabilidades por versión (`VULN_DB`).
-- Export adicional en JSON, para post-procesado o integración con otras herramientas.
-- Comparación entre escaneos de un mismo target en distintas fechas (qué cambió: subdominios nuevos, versiones, directorios).
-- Comparación de postura de seguridad entre el dominio principal y sus subdominios — detectar subdominios con protecciones sensiblemente más débiles que el dominio raíz.
-- Mejorar la fiabilidad de la detección/análisis de WordPress en casos límite.
-- Screenshots de subdominios/directorios vivos.
-- Listado detallado de los resultados "sospechosos" del fuzzing en el reporte (actualmente solo se indica el conteo).
-
 ## Feedback y reporte de bugs
 
 Este proyecto está en fase alpha y agradece cualquier feedback. Si encuentras un bug, un comportamiento raro, o algo que no funciona como esperabas, abre un **Issue** en este repositorio incluyendo:
@@ -180,11 +170,11 @@ Esto ayuda muchísimo más que el feedback informal, y queda trazado para futura
 
 ## Uso responsable
 
-Esta herramienta está pensada para usarse únicamente contra objetivos sobre los que se tiene autorización explícita (programas de bug bounty, pentesting contratado, laboratorios propios, CTFs). El escaneo de dominios sin autorización puede ser ilegal según la jurisdicción. El autor no se hace responsable del uso indebido de este script.
+Esta herramienta está pensada para usarse únicamente contra objetivos sobre los que se tiene autorización explícita (programas de bug bounty, laboratorios propios, CTFs). El escaneo de dominios sin autorización puede ser ilegal según la jurisdicción. El autor no se hace responsable del uso indebido de este script.
 
 ## Licencia
 
-Este proyecto está licenciado bajo **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)**.
+Este proyecto está licenciado bajo **Creative Commons Atribución-NoComercial-CompartirIgual 4.0 Internacional (CC BY-NC-SA 4.0)**.
 
 En resumen:
 - Puedes usar, modificar y redistribuir el código libremente.
