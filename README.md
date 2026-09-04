@@ -40,11 +40,6 @@ Cada escaneo (salvo `-n`) crea `resultados/<target>_<fecha>/` con:
 - `subdominios_vivos.txt`
 - `wordpress.txt` (solo si hay hallazgos de WordPress)
 
-### Ejemplo
-
-```
-[ Pega aquí un escaneo real anonimizado ]
-```
 
 ## Qué hace, por fase
 
