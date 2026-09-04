@@ -24,7 +24,7 @@ cat << "EOF"
 EOF
 echo -e "${NC}"
 echo -e "${YELLOW}         >> Web Reconnaissance Tool <<${NC}"
-echo -e "${GREEN}            Version 0.2.1 - by w1s4${NC}"
+echo -e "${GREEN}            Version 0.2.0 - by w1s4${NC}"
 echo -e "${CYAN}=========================================================${NC}"
 echo ""
 }
