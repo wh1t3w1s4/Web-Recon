@@ -1,67 +1,10 @@
-# Web-Recon-v0.1.3-alpha
-The web reconnaissance tool by w1s4
+# Web-Recon
 
-**Estado del proyecto: alpha (v0.1.3)** — en fase de pruebas con feedback de terceros. Puede tener bugs, comportamiento inconsistente entre targets, y cambiar bastante entre versiones. No recomendado todavía para uso en entornos críticos sin supervisión.
+Script bash de reconocimiento web (pasivo + activo) para auditorías, bug bounty y CTFs con autorización.
 
-Web-Recon es un script en bash para automatizar la fase de reconocimiento (pasivo y activo) sobre un dominio objetivo. Encadena varias herramientas estándar de recon y aplica algo de lógica propia para reducir ruido en los resultados (filtrado de falsos positivos en fuzzing, detección de wildcard, agrupación de patrones repetidos, detección de versiones vulnerables conocidas, análisis de cabeceras/cookies, bypass de 403, etc.).
+**v0.2.0-beta** · en pruebas, puede tener bugs · [licencia CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.es)
 
-Esta herramienta está pensada únicamente para uso en auditorías, CTFs, bug bounty o programas de pentesting donde se cuenta con autorización explícita sobre el objetivo.
-
-## Qué hace
-
-El script se divide en dos fases. En modo normal se ejecutan ambas; en modo subdominio (`-s`) solo se ejecuta la parte de la Fase 2 que tiene sentido sobre un host concreto (ver más abajo).
-
-### Fase 1 — Reconocimiento pasivo
-
-- **WHOIS**: información de registro del dominio.
-- **Resolución DNS**: registros A vía `dig`, limitado a las primeras IPs resueltas.
-- **Registros DNS adicionales**: MX, NS, TXT, SOA, CNAME y CAA, con un intérprete que anota automáticamente patrones conocidos (SPF/DKIM/DMARC en TXT, proveedores de correo y DNS habituales, posibles candidatos a subdomain takeover en CNAME, autoridades de certificación en CAA, etc.).
-- **IP info**: script propio de geolocalización aproximada y datos de cada IP resuelta (ISP, ASN, DNS inverso).
-
-### Fase 2 — Reconocimiento activo
-
-- **Detección de protocolo**: comprueba si el objetivo responde por HTTP, HTTPS o ninguno de los dos, antes de lanzar el resto de módulos.
-- **Fingerprinting web**: `whatweb` en modo verbose. Si detecta un bloqueo de Cloudflare (403 + challenge), omite la salida completa y avisa en su lugar.
-- **Detección de vulnerabilidades conocidas por versión**: cruza las tecnologías y versiones detectadas por `whatweb` contra una base de datos local de CVEs comprobables (jQuery, Bootstrap, nginx, Apache, OpenSSL, PHP, etc.), reportando coincidencias con su CVE y referencia.
-- **Cabeceras de seguridad y cookies**: analiza en una única pasada HSTS, X-Frame-Options/frame-ancestors, Content-Security-Policy, X-Content-Type-Options, Referrer-Policy, configuración de CORS, y exposición de información vía X-Powered-By/Server. Sobre las cookies de sesión evalúa HttpOnly, Secure y SameSite, documentando el riesgo concreto de cada ausencia (por ejemplo, cookie sin HttpOnly → robable vía `document.cookie` en caso de XSS). Si no hay cookies en la raíz, reintenta contra `/login` antes de darlo por vacío.
-- **Detección de WordPress**: si `whatweb` detecta el CMS, lanza `wpscan` automáticamente en modo pasivo (detección por rastro en HTML, sin barrido activo de slugs) en busca de plugins/temas vulnerables y usuarios, con límite de tiempo (`timeout`) como salvaguarda.
-- **WAF detection**: `wafw00f` para identificar si hay un WAF delante del objetivo.
-- **Fuzzing de directorios**: `ffuf` contra el objetivo, con:
-  - Autocalibración (`-ac`) para mitigar comportamiento wildcard.
-  - Reducción automática de hilos (de 80 a 20) si se detecta rate-limiting (códigos 429/503/508).
-  - Agrupación de resultados por status/words/lines para detectar patrones repetidos (falsos positivos).
-  - Resultados "limpios" mostrados directamente; resultados "sospechosos" (patrón repetido) resueltos con `httpx` o `curl` como fallback.
-  - Matches visibles en tiempo real a medida que se encuentran.
-- **Bypass de 403**: si el fuzzing detecta rutas con código 403, prueba automáticamente (en modo `-n`, previa confirmación) variaciones de ruta (barra final, doble barra, encoding, mayúsculas, `..;/`) y de cabeceras (`X-Original-URL`, `X-Forwarded-For`, `Referer`, etc.) para comprobar si el filtro es evitable. Solo se muestran las variaciones que devuelven un código distinto de 403/404, siguiendo redirecciones para descartar 301 que acaban en la misma pared.
-- **robots.txt**: extracción de rutas `Disallow`/`Allow`, filtrando comentarios y líneas irrelevantes.
-- **Descubrimiento de subdominios** *(solo en modo normal, omitido con `-s`)*:
-  - `subfinder` como fuente principal.
-  - `crt.sh` (Certificate Transparency) como fuente complementaria, con reintentos, backoff y parseo robusto de CSV/JSON (vía Python, evita el ruido de campos con comas internas).
-  - Unión y deduplicación de ambas fuentes.
-  - Verificación de cuáles subdominios responden realmente, filtrando 404s.
-
-## Modo subdominio (`-s`)
-
-Pensado para cuando el objetivo ya es un subdominio conocido (por ejemplo, tras descubrirlo en un escaneo anterior) y no tiene sentido repetir WHOIS, registros DNS del dominio raíz, etc.
-
-Con `-s` se mantienen: IP + geolocalización, detección de protocolo, whatweb, detección de vulnerabilidades por versión, cabeceras/cookies, WordPress/wpscan, wafw00f, fuzzing de directorios, bypass de 403 y robots.txt.
-
-## Bypass de 403 — comportamiento según el modo de ejecución
-
-- **Con `-n` (sin exportación)**: si el fuzzing detecta al menos un 403, se pregunta interactivamente `¿Quieres intentar técnicas de bypass sobre ellas? [y/N]` (case-insensitive). Solo se ejecuta si se confirma.
-- **En modo normal (con exportación)**: se informa de cuántas rutas con 403 se detectaron, sin preguntar ni ejecutar el bypass, para no interrumpir un flujo pensado para dejarse corriendo sin intervención.
-
-## Kill switch
-
-En cualquier momento de la ejecución, **Ctrl+K** finaliza el script de forma inmediata y limpia (restaura la configuración del terminal antes de salir). Útil para escaneos que se alargan más de lo esperado sin tener que cerrar la terminal.
-
-## Requisitos del sistema
-
-Probado en **Debian/Ubuntu**. No hay soporte todavía para Arch, Fedora o macOS — el instalador (`setup.sh`) asume `apt` como gestor de paquetes.
-
-## Instalación / Dependencias
-
-La forma recomendada es usar el script de instalación incluido, que resuelve todas las dependencias automáticamente:
+## Instalación
 
 ```bash
 git clone https://github.com/wh1t3w1s4/Web-Recon
@@ -70,116 +13,81 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-Al terminar, `setup.sh` muestra un resumen indicando qué dependencias quedaron instaladas correctamente y cuáles requieren atención manual.
-
-Si prefieres instalar todo a mano, consulta la tabla de dependencias a continuación.
-
-| Herramienta | Uso | Instalación manual |
-|---|---|---|
-| `whois` | Fase 1 | `apt install whois` |
-| `dig` | Fase 1 | `apt install dnsutils` |
-| `curl` | Todas las fases (incluye análisis de cabeceras/cookies y bypass de 403) | `apt install curl` |
-| `jq` | Parseo de JSON (ffuf, crt.sh) | `apt install jq` |
-| `python3` | Parseo robusto de CSV (fallback de crt.sh) | `apt install python3` |
-| `whatweb` | Fase 2 | `apt install whatweb` |
-| `wafw00f` | Fase 2 | `pip install wafw00f` |
-| `wpscan` | Fase 2 (si detecta WordPress) | `gem install wpscan` |
-| `ffuf` | Fase 2 | `go install github.com/ffuf/ffuf/v2@latest` |
-| `subfinder` | Fase 2 | `go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest` |
-| `httpx` (ProjectDiscovery) | Fase 2 | `go install github.com/projectdiscovery/httpx/cmd/httpx@latest` |
-| `dirb` | Wordlist de fuzzing (`big.txt`) | `apt install dirb` |
-
-Si falta alguna dependencia, el script avisa al inicio e indica el comando de instalación. Las fases que dependen de una herramienta ausente se omiten o caen a un fallback (por ejemplo, `curl` en lugar de `httpx`) en vez de interrumpir la ejecución completa.
-
-> Nota: `httpx` de ProjectDiscovery puede entrar en conflicto con el paquete de Python del mismo nombre (`pip install httpx`, un cliente HTTP). El script referencia el binario por ruta absoluta (`$HOME/.go/bin/httpx` por defecto) para evitar ambigüedad. Si lo tienes en otra ubicación, puedes indicarlo con la variable de entorno `HTTPX_BIN`.
-
-### Token de la API de WPScan (opcional)
-
-Si tienes un token gratuito de [wpscan.com](https://wpscan.com/), el script lo usa automáticamente para consultar su base de datos de vulnerabilidades. Expórtalo antes de ejecutar el script:
-
-```bash
-export WPSCAN_API_TOKEN="tu_token_aqui"
-```
-
-Sin token, wpscan sigue funcionando igual para detección de plugins/temas/usuarios, solo sin el cruce contra la base de datos de CVEs de WPScan.
-
 ## Uso
 
 ```bash
-./web_recon.sh [opciones] <dominio>
+./web_recon.sh ejemplo.com
 ```
 
-| Opción | Descripción |
+| Opción | Qué hace |
 |---|---|
-| `-o, --output <ruta>` | Carpeta base donde se guardarán los resultados (por defecto: `./resultados`) |
-| `-n, --no-export` | No crea carpeta ni exporta nada, solo muestra en pantalla. Habilita la pregunta interactiva de bypass de 403 |
-| `-s, --subdomain` | Modo subdominio: omite WHOIS, DNS extra y descubrimiento de subdominios |
-| `-h, --help` | Muestra la ayuda de uso |
-
-Ejemplos:
+| `-o <ruta>` | Carpeta de salida (por defecto `./resultados`) |
+| `-n` | No exportar nada, solo pantalla. Activa la pregunta de bypass de 403 |
+| `-s` | Modo subdominio: escanea directo, sin WHOIS ni descubrimiento de subdominios |
+| `-h` | Ayuda |
 
 ```bash
-./web_recon.sh ejemplo.com
-./web_recon.sh -o /home/user/pentest ejemplo.com
-./web_recon.sh -n ejemplo.com
 ./web_recon.sh -s admin.ejemplo.com
+./web_recon.sh -n -o /home/user/pentest ejemplo.com
 ```
 
-Si el dominio no responde por HTTP ni HTTPS, la Fase 2 se omite automáticamente, el script informa del motivo y se finaliza la ejecución.
+**Ctrl+K** corta la ejecución en cualquier momento.
 
-## Resultados exportados
+### Salida
 
-Salvo que uses `-n`, cada ejecución crea una carpeta `<ruta_base>/<target>_<timestamp>/` con:
+Cada escaneo (salvo `-n`) crea `resultados/<target>_<fecha>/` con:
+- `reporte_final.md` — todo el escaneo, en Markdown
+- `subdominios_vivos.txt`
+- `wordpress.txt` (solo si hay hallazgos de WordPress)
 
-- **`reporte_final.md`** — resumen completo del escaneo en Markdown, con jerarquía por fase y módulo.
-- **`subdominios_vivos.txt`** — subdominios que respondieron correctamente, tras verificación con `httpx` (no se genera en modo `-s`).
-- **`wordpress.txt`** — solo se genera si se detecta WordPress y `wpscan` reporta hallazgos.
-
-### Ejemplo de salida completa
+### Ejemplo
 
 ```
-[ Pega aquí un escaneo de ejemplo actualizado, con el dominio real anonimizado,
-  que refleje ya vulnerabilidades por versión, cabeceras/cookies y bypass de 403 ]
+[ Pega aquí un escaneo real anonimizado ]
 ```
 
-## Wordlists
+## Qué hace, por fase
 
-Por defecto el script usa wordlists locales para fuzzing de directorios y subdominios (ajustables directamente en el script). Revisa las rutas configuradas antes de ejecutar si tu wordlist está en otra ubicación:
+**Fase 1 (pasiva)** — WHOIS, registros DNS (A/MX/NS/TXT/SOA/CNAME/CAA con interpretación automática de SPF/DKIM/DMARC, takeovers, etc.), geolocalización de IPs.
 
-- Directorios: `big.txt` (ruta por defecto: `/usr/share/dirb/wordlists/big.txt`, instalada vía el paquete `dirb`). También existe en [SecLists](https://github.com/danielmiessler/SecLists), con un catálogo más amplio, si prefieres cambiar la ruta manualmente.
-- Subdominios (vía subfinder): no requiere wordlist propia, usa fuentes OSINT
+**Fase 2 (activa)** — protocolo HTTP/HTTPS, whatweb, vulnerabilidades conocidas por versión, cabeceras de seguridad y cookies (HSTS, CSP, HttpOnly/Secure/SameSite...), WordPress + wpscan si aplica, WAF, fuzzing de directorios con filtrado de ruido y bypass de 403 sobre lo encontrado, robots.txt, y descubrimiento de subdominios (subfinder + crt.sh).
 
-## Vulnerabilidades conocidas por versión
+`-s` ejecuta solo la parte de Fase 2 que tiene sentido sobre un host ya conocido (sin WHOIS ni descubrimiento de subdominios).
 
-El script incluye una pequeña base de datos local (editable directamente en el script, variable `VULN_DB`) que compara las versiones detectadas por `whatweb` contra rangos de versiones con CVEs documentados. Es una comprobación determinista (versión detectada < versión con fix conocido → aviso), no un escáner de vulnerabilidades completo.
+## Dependencias
 
-Limitaciones a tener en cuenta:
-- Un backport de seguridad (parche aplicado sin cambiar el número de versión reportado) puede generar un falso positivo.
-- Solo cubre las tecnologías añadidas manualmente a `VULN_DB` — no es una base de datos exhaustiva ni se actualiza automáticamente.
-- Un WAF u otra mitigación externa puede impedir la explotación real aunque la versión coincida.
+Instaladas automáticamente por `setup.sh`. Si prefieres a mano:
 
-## Feedback y reporte de bugs
+| Herramienta | Instalación |
+|---|---|
+| whois, dig, curl, jq, python3, whatweb, dirb | `apt install <nombre>` |
+| wafw00f | `pip install wafw00f` |
+| wpscan | `gem install wpscan` |
+| ffuf, subfinder, httpx | `go install github.com/.../<tool>@latest` |
 
-Este proyecto está en fase alpha y agradece cualquier feedback. Si encuentras un bug, un comportamiento raro, o algo que no funciona como esperabas, abre un **Issue** en este repositorio incluyendo:
+Faltando alguna, el script avisa y omite o usa fallback (curl en vez de httpx, por ejemplo) en vez de romperse.
 
-- El comando exacto que ejecutaste
-- La salida obtenida (o el error completo)
-- El sistema operativo y versión donde lo probaste
+**wpscan (opcional):** con token gratuito de [wpscan.com](https://wpscan.com/) consulta su base de CVEs.
+```bash
+export WPSCAN_API_TOKEN="tu_token"
+```
 
-Esto ayuda muchísimo más que el feedback informal, y queda trazado para futuras versiones.
+`httpx` de ProjectDiscovery puede chocar con el paquete de Python del mismo nombre — el script usa ruta absoluta (`$HOME/.go/bin/httpx` por defecto, configurable con `HTTPX_BIN`).
+
+## Vulnerabilidades por versión
+
+`VULN_DB` (editable en el script) compara versiones detectadas por whatweb contra CVEs conocidos — comprobación determinista, no un escáner completo. Puede dar falsos positivos con backports, y solo cubre lo que hay añadido a mano en la base de datos.
+
+## Roadmap
+
+- Flag `-d/--deep`: wpscan agresivo + bypass 403 automático
+- Export en JSON
+- Ampliar `VULN_DB`, screenshots, comparación entre escaneos
+
+## Feedback
+
+Abre un Issue con el comando exacto, la salida obtenida y tu sistema operativo.
 
 ## Uso responsable
 
-Esta herramienta está pensada para usarse únicamente contra objetivos sobre los que se tiene autorización explícita (programas de bug bounty, laboratorios propios, CTFs). El escaneo de dominios sin autorización puede ser ilegal según la jurisdicción. El autor no se hace responsable del uso indebido de este script.
-
-## Licencia
-
-Este proyecto está licenciado bajo **Creative Commons Atribución-NoComercial-CompartirIgual 4.0 Internacional (CC BY-NC-SA 4.0)**.
-
-En resumen:
-- Puedes usar, modificar y redistribuir el código libremente.
-- Debes dar crédito al autor original.
-- No está permitido ningún uso comercial ni con ánimo de lucro.
-- Cualquier versión modificada debe distribuirse bajo esta misma licencia.
-
-Texto completo: https://creativecommons.org/licenses/by-nc-sa/4.0/deed.es
+Solo contra objetivos con autorización explícita. El autor no se hace responsable del uso indebido.
