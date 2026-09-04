@@ -1,4 +1,4 @@
-# Web-Recon
+# Web-Recon v0.2.0-beta
 
 Script bash de reconocimiento web (pasivo + activo) para auditorías, bug bounty y CTFs con autorización.
 
